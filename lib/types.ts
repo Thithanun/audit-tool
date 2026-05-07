@@ -1,5 +1,7 @@
 export type Framework = 'ISO27001' | 'NIST_CSF';
 
+export type StandardUsed = 'ISO27001' | 'NIST_CSF' | 'BOTH';
+
 export type FindingStatus =
   | 'Not Assessed'
   | 'Conformity'
@@ -12,15 +14,33 @@ export type SessionStatus = 'Planned' | 'In Progress' | 'Completed';
 
 export type CorrectiveActionStatus = 'Open' | 'In Progress' | 'Closed' | 'Overdue';
 
-export interface AuditSession {
+export interface AuditPlan {
   id: string;
-  name: string;
-  framework: Framework;
+  objective: string;
+  standard: StandardUsed;
   scope: string;
-  auditor: string;
+  auditAreas: string;
+  leadAuditor: string;
   startDate: string;
   endDate: string;
   status: SessionStatus;
+  createdAt: string;
+}
+
+// Backward-compat alias used by Checklist and Dashboard
+export type AuditSession = AuditPlan;
+
+export interface PlanSession {
+  id: string;
+  planId: string;
+  day: number;
+  date: string;
+  time: string;
+  areaOfAudit: string;
+  relatedClauses: string;
+  auditee: string;
+  mainAuditor: string;
+  iaTeam: string[];
   createdAt: string;
 }
 

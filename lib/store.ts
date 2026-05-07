@@ -1,4 +1,4 @@
-import type { AuditPlan, ChecklistItem, CorrectiveAction, PlanSession } from './types';
+import type { AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession } from './types';
 import { parseClauseText } from './clause-parser';
 
 const KEYS = {
@@ -6,6 +6,7 @@ const KEYS = {
   checklist: 'audit_checklist',
   corrective: 'audit_corrective_actions',
   planSessions: 'audit_plan_sessions',
+  templates: 'audit_checklist_templates',
 } as const;
 
 function load<T>(key: string): T[] {
@@ -125,6 +126,24 @@ export function saveCorrectiveAction(ca: CorrectiveAction): void {
 
 export function deleteCorrectiveAction(id: string): void {
   save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.id !== id));
+}
+
+// ── Checklist Templates ───────────────────────────────────────────────────────
+
+export function getChecklistTemplates(): ChecklistTemplate[] {
+  return load<ChecklistTemplate>(KEYS.templates);
+}
+
+export function saveChecklistTemplate(t: ChecklistTemplate): void {
+  const all = getChecklistTemplates();
+  const idx = all.findIndex(x => x.id === t.id);
+  if (idx >= 0) all[idx] = t;
+  else all.push(t);
+  save(KEYS.templates, all);
+}
+
+export function deleteChecklistTemplate(id: string): void {
+  save(KEYS.templates, getChecklistTemplates().filter(t => t.id !== id));
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────

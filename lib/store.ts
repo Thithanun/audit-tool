@@ -1,4 +1,5 @@
 import type { AuditPlan, ChecklistItem, CorrectiveAction, PlanSession } from './types';
+import { parseClauseText } from './clause-parser';
 
 const KEYS = {
   sessions: 'audit_sessions',
@@ -54,8 +55,18 @@ export const deleteSession = deleteAuditPlan;
 
 // ── Plan Sessions (scheduling within a plan) ─────────────────────────────────
 
+function migratePlanSession(raw: Record<string, unknown>): PlanSession {
+  const rc = raw.relatedClauses;
+  return {
+    ...(raw as unknown as PlanSession),
+    relatedClauses: typeof rc === 'string'
+      ? parseClauseText(rc)
+      : (Array.isArray(rc) ? (rc as string[]) : []),
+  };
+}
+
 export function getPlanSessions(planId?: string): PlanSession[] {
-  const all = load<PlanSession>(KEYS.planSessions);
+  const all = load<Record<string, unknown>>(KEYS.planSessions).map(migratePlanSession);
   return planId ? all.filter(ps => ps.planId === planId) : all;
 }
 

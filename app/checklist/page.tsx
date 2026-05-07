@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import type { ChecklistItem, FindingStatus, PlanSession, AuditPlan } from '@/lib/types';
-import type { ClauseTemplate } from '@/lib/types';
+import type { ChecklistItem, ClauseTemplate, FindingStatus, PlanSession, AuditPlan } from '@/lib/types';
 import {
   getAuditPlans,
   getChecklistItems,
@@ -56,49 +55,6 @@ const SUMMARY_FILTER_ACTIVE: Record<string, string> = {
 function isGeneralSession(s: PlanSession): boolean {
   const area = s.areaOfAudit.toLowerCase();
   return GENERAL_KEYWORDS.some(kw => area.includes(kw));
-}
-
-/**
- * Parse a free-text relatedClauses string into concrete clauseRef strings.
- *
- * Supported patterns (case-insensitive, comma or "and" separated):
- *   "Clause 5,7,9"        → all sub-clauses of 5, 7, 9  (e.g. 5.1, 5.2, 5.3)
- *   "Annex A.5.4"         → A.5.4 (direct lookup)
- *   "A.5.2, A.5.3"        → A.5.2, A.5.3
- *   Mixed of the above    → union of all
- */
-function parseRelatedClauses(text: string, allClauses: ClauseTemplate[]): string[] {
-  if (!text.trim()) return [];
-
-  // Normalise "and" → "," so we have a single separator
-  const normalised = text.replace(/\band\b/gi, ',');
-
-  const result: string[] = [];
-
-  // Pass 1 — Annex A controls: match A.X, A.X.Y, A.X.YZ …
-  const annexRe = /\bA\.\d+(?:\.\d+)*\b/g;
-  for (const ref of normalised.match(annexRe) ?? []) {
-    if (allClauses.some(c => c.clauseRef === ref)) result.push(ref);
-  }
-
-  // Pass 2 — ISMS clause numbers after the keyword "Clause"
-  // Strip Annex tokens first so their digits don't confuse the number scan
-  const withoutAnnex = normalised
-    .replace(/\bAnnex\b/gi, '')
-    .replace(/\bA\.\d+(?:\.\d+)*\b/g, '');
-
-  const clauseRe = /\bClause\b\s*([\d][\d\s,]*)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = clauseRe.exec(withoutAnnex)) !== null) {
-    const nums = m[1].split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
-    for (const num of nums) {
-      allClauses
-        .filter(c => c.clauseRef === num || c.clauseRef.startsWith(num + '.'))
-        .forEach(c => result.push(c.clauseRef));
-    }
-  }
-
-  return [...new Set(result)];
 }
 
 function clauseSummary(items: ChecklistItem[]): SummaryStatus {
@@ -217,7 +173,7 @@ export default function ChecklistPage() {
   // ── Derived ─────────────────────────────────────────────────────────────────
 
   const auditSessions = useMemo(
-    () => planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.trim() !== ''),
+    () => planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0),
     [planSessions],
   );
 
@@ -227,8 +183,7 @@ export default function ChecklistPage() {
     if (selectedSessionId) {
       const session = auditSessions.find(s => s.id === selectedSessionId);
       if (!session) return [];
-      const refs = parseRelatedClauses(session.relatedClauses, ALL_CLAUSES);
-      return refs.flatMap(ref => ALL_CLAUSES.find(c => c.clauseRef === ref) ?? []);
+      return (session.relatedClauses ?? []).flatMap(ref => ALL_CLAUSES.find(c => c.clauseRef === ref) ?? []);
     }
     // All Sessions — derive clauses from stored items for this plan
     const refs = new Set(items.filter(i => i.sessionId === selectedPlanId).map(i => i.clauseRef));

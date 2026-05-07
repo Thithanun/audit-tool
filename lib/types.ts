@@ -55,8 +55,18 @@ export interface ChecklistItem {
   status: FindingStatus;
   notes: string;
   evidence: string;
+  recommendation?: string;
+  dueDate?: string;
+  itemNumber?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChecklistTemplate {
+  id: string;
+  question: string;
+  clauseRef: string;
+  createdAt: string;
 }
 
 export interface CorrectiveAction {

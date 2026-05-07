@@ -7,7 +7,7 @@ import {
   getChecklistItems,
   getCorrectiveActions,
   saveCorrectiveAction,
-  getSessionProgress,
+  computeSessionProgress,
 } from '@/lib/store';
 import type { AuditPlan, ChecklistItem, FindingStatus } from '@/lib/types';
 import StatusBadge, { FINDING_STATUSES, CA_STATUSES } from '@/components/StatusBadge';
@@ -38,11 +38,26 @@ export default function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string>('all');
   const [caEditTarget, setCaEditTarget] = useState<CorrectiveAction | null>(null);
   const [caForm, setCaForm] = useState<Partial<CorrectiveAction>>({});
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
-  const reload = useCallback(() => {
-    setSessions(getAuditPlans());
-    setItems(getChecklistItems());
-    setCas(getCorrectiveActions());
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setDbError(null);
+    try {
+      const [plans, is, actions] = await Promise.all([
+        getAuditPlans(),
+        getChecklistItems(),
+        getCorrectiveActions(),
+      ]);
+      setSessions(plans);
+      setItems(is);
+      setCas(actions);
+    } catch (e) {
+      setDbError(e instanceof Error ? e.message : 'Connection failed');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -99,16 +114,34 @@ export default function DashboardPage() {
     setCaForm({ status: ca.status, owner: ca.owner, dueDate: ca.dueDate, closureNotes: ca.closureNotes });
   }
 
-  function handleCASave(e: React.FormEvent) {
+  async function handleCASave(e: React.FormEvent) {
     e.preventDefault();
     if (!caEditTarget) return;
-    saveCorrectiveAction({ ...caEditTarget, ...caForm, updatedAt: new Date().toISOString() });
-    setCaEditTarget(null);
-    reload();
+    try {
+      await saveCorrectiveAction({ ...caEditTarget, ...caForm, updatedAt: new Date().toISOString() });
+      setCaEditTarget(null);
+      await reload();
+    } catch (err) {
+      alert('Save failed: ' + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   const isOverdue = (ca: CorrectiveAction) =>
     ca.dueDate && ca.status !== 'Closed' && new Date(ca.dueDate) < new Date();
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (dbError) return (
+    <div className="text-center py-16 bg-red-50 rounded-xl border border-red-200 mx-4 mt-8">
+      <p className="text-red-600 font-medium mb-1">Unable to connect to database</p>
+      <p className="text-sm text-red-500 mb-4">{dbError}</p>
+      <button onClick={reload} className="text-sm text-blue-600 hover:underline">Try again</button>
+    </div>
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -198,7 +231,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {sessions.map(s => {
-                const prog = getSessionProgress(s.id);
+                const prog = computeSessionProgress(items, s.id);
                 return (
                   <div key={s.id}>
                     <div className="flex justify-between text-xs mb-1">

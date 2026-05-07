@@ -1,29 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import type { AuditPlan, StandardUsed, SessionStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, StandardUsed, SessionStatus } from '@/lib/types';
 import {
   getAuditPlans,
   saveAuditPlan,
   deleteAuditPlan,
-  saveChecklistItem,
-  getSessionProgress,
+  bulkSaveChecklistItems,
+  computeSessionProgress,
   uid,
 } from '@/lib/store';
-import { ISO27001_CLAUSES, NIST_CSF_CLAUSES } from '@/lib/seed-data';
+import { ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 
 const STANDARD_OPTIONS: { value: StandardUsed; label: string }[] = [
   { value: 'ISO27001', label: 'ISO 27001:2022' },
-  { value: 'NIST_CSF', label: 'NIST CSF 2.0' },
-  { value: 'BOTH',     label: 'ISO 27001:2022 + NIST CSF 2.0' },
 ];
-
-function standardLabel(s: StandardUsed) {
-  return STANDARD_OPTIONS.find(o => o.value === s)?.label ?? s;
-}
 
 function fmtDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -33,49 +27,99 @@ function fmtDate(dateStr: string): string {
 }
 
 const emptyPlan = (): Omit<AuditPlan, 'id' | 'createdAt'> => ({
-  objective: '',
-  standard: 'ISO27001',
-  scope: '',
-  auditAreas: '',
-  leadAuditor: '',
-  startDate: '',
-  endDate: '',
-  status: 'Planned',
+  objective: '', standard: 'ISO27001', scope: '', auditAreas: '',
+  leadAuditor: '', startDate: '', endDate: '', status: 'Planned',
 });
+
+function Spinner() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
+function DbError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="text-center py-16 bg-red-50 rounded-xl border border-red-200 mx-4 mt-8">
+      <p className="text-red-600 font-medium mb-1">Unable to connect to database</p>
+      <p className="text-sm text-red-500 mb-4">{message}</p>
+      <button onClick={onRetry} className="text-sm text-blue-600 hover:underline">Try again</button>
+    </div>
+  );
+}
 
 export default function AuditPlanListPage() {
   const [plans, setPlans] = useState<AuditPlan[]>([]);
+  const [allItems, setAllItems] = useState<ChecklistItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
   const [planModal, setPlanModal] = useState(false);
   const [planForm, setPlanForm] = useState(emptyPlan());
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const reload = useCallback(() => setPlans(getAuditPlans()), []);
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setDbError(null);
+    try {
+      const { getChecklistItems } = await import('@/lib/store');
+      const [ps, is] = await Promise.all([getAuditPlans(), getChecklistItems()]);
+      setPlans(ps);
+      setAllItems(is);
+    } catch (e) {
+      setDbError(e instanceof Error ? e.message : 'Connection failed');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => { reload(); }, [reload]);
 
-  function openCreate() {
-    setPlanForm(emptyPlan());
-    setPlanModal(true);
-  }
+  const planProgress = useMemo(() => {
+    const map: Record<string, { total: number; assessed: number; pct: number }> = {};
+    for (const p of plans) map[p.id] = computeSessionProgress(allItems, p.id);
+    return map;
+  }, [plans, allItems]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const now = new Date().toISOString();
-    const plan: AuditPlan = { id: uid(), createdAt: now, ...planForm };
-    saveAuditPlan(plan);
-    const clauses = planForm.standard === 'BOTH'
-      ? [...ISO27001_CLAUSES, ...NIST_CSF_CLAUSES]
-      : planForm.standard === 'ISO27001' ? ISO27001_CLAUSES : NIST_CSF_CLAUSES;
-    for (const c of clauses) {
-      saveChecklistItem({
+    setSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const plan: AuditPlan = { id: uid(), createdAt: now, ...planForm };
+      await saveAuditPlan(plan);
+      // Seed ISO 27001 checklist items
+      const items: ChecklistItem[] = ISO27001_CLAUSES.map(c => ({
         id: uid(), sessionId: plan.id, framework: c.framework,
         clauseRef: c.clauseRef, clauseTitle: c.clauseTitle,
         requirement: c.requirement, status: 'Not Assessed',
         notes: '', evidence: '', createdAt: now, updatedAt: now,
-      });
+      }));
+      await bulkSaveChecklistItems(items);
+      setPlanModal(false);
+      setPlanForm(emptyPlan());
+      await reload();
+    } catch (e) {
+      alert('Save failed: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSaving(false);
     }
-    setPlanModal(false);
-    reload();
   }
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteAuditPlan(id);
+      setDeleteConfirm(null);
+      await reload();
+    } catch (e) {
+      alert('Delete failed: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+
+  if (loading) return <Spinner />;
+  if (dbError) return <DbError message={dbError} onRetry={reload} />;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -85,7 +129,7 @@ export default function AuditPlanListPage() {
           <p className="text-slate-500 text-sm mt-1">Manage audit plans and schedule sessions</p>
         </div>
         <button
-          onClick={openCreate}
+          onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -101,7 +145,7 @@ export default function AuditPlanListPage() {
           <h3 className="text-slate-600 font-medium text-lg">No audit plans yet</h3>
           <p className="text-slate-400 text-sm mt-1 mb-4">Create a new plan to start your audit</p>
           <button
-            onClick={openCreate}
+            onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             Create Audit Plan
@@ -110,10 +154,9 @@ export default function AuditPlanListPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {plans.map(plan => {
-            const prog = getSessionProgress(plan.id);
+            const prog = planProgress[plan.id] ?? { total: 0, assessed: 0, pct: 0 };
             return (
               <div key={plan.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col gap-3">
-                {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-semibold text-slate-900 leading-snug flex-1 min-w-0">
                     {plan.objective || <span className="text-slate-400 italic">No objective</span>}
@@ -122,29 +165,23 @@ export default function AuditPlanListPage() {
                 </div>
 
                 <span className="text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full self-start">
-                  {standardLabel(plan.standard)}
+                  ISO 27001:2022
                 </span>
 
-                {/* Meta */}
                 <div className="flex flex-col gap-1 text-xs text-slate-500">
                   {plan.leadAuditor && (
                     <span>👤 <span className="text-slate-700">{plan.leadAuditor}</span></span>
                   )}
                   {(plan.startDate || plan.endDate) && (
-                    <span>
-                      📅{' '}
-                      <span className="text-slate-700">
-                        {fmtDate(plan.startDate)}
-                        {plan.endDate && ` → ${fmtDate(plan.endDate)}`}
-                      </span>
-                    </span>
+                    <span>📅 <span className="text-slate-700">
+                      {fmtDate(plan.startDate)}{plan.endDate && ` → ${fmtDate(plan.endDate)}`}
+                    </span></span>
                   )}
                   {plan.auditAreas && (
                     <span>📍 <span className="text-slate-700">{plan.auditAreas}</span></span>
                   )}
                 </div>
 
-                {/* Progress */}
                 <div>
                   <div className="flex justify-between text-xs text-slate-400 mb-1">
                     <span>Checklist</span>
@@ -155,7 +192,6 @@ export default function AuditPlanListPage() {
                   </div>
                 </div>
 
-                {/* Actions */}
                 <div className="flex gap-2 pt-1 border-t border-slate-100 mt-auto">
                   <Link
                     href={`/audit-plan/${plan.id}`}
@@ -200,7 +236,7 @@ export default function AuditPlanListPage() {
             >
               {STANDARD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <p className="text-xs text-slate-400 mt-1">Checklist จะถูก auto-seed ด้วย controls ของมาตรฐานที่เลือก</p>
+            <p className="text-xs text-slate-400 mt-1">Checklist จะถูก auto-seed ด้วย Annex A controls ของ ISO 27001:2022</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">ขอบเขตที่ตรวจประเมิน (Scope of Audit)</label>
@@ -244,8 +280,14 @@ export default function AuditPlanListPage() {
             </select>
           </div>
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => setPlanModal(false)} className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</button>
-            <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">Create Audit Plan</button>
+            <button type="button" onClick={() => setPlanModal(false)}
+              className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+              {saving ? 'Creating…' : 'Create Audit Plan'}
+            </button>
           </div>
         </form>
       </Modal>
@@ -256,11 +298,16 @@ export default function AuditPlanListPage() {
           Are you sure? All checklist items, corrective actions, and sessions will be permanently removed.
         </p>
         <div className="flex gap-3">
-          <button onClick={() => setDeleteConfirm(null)} className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</button>
+          <button onClick={() => setDeleteConfirm(null)}
+            className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
           <button
-            onClick={() => { if (deleteConfirm) { deleteAuditPlan(deleteConfirm); setDeleteConfirm(null); reload(); } }}
+            onClick={() => { if (deleteConfirm) handleDelete(deleteConfirm); }}
             className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-medium transition-colors"
-          >Delete</button>
+          >
+            Delete
+          </button>
         </div>
       </Modal>
     </div>

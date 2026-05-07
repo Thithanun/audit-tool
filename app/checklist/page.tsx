@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ChecklistItem, FindingStatus, CorrectiveAction, CorrectiveActionStatus } from '@/lib/types';
 import {
-  getSessions,
+  getAuditPlans,
   getChecklistItems,
   saveChecklistItem,
   deleteChecklistItem,
@@ -12,7 +12,7 @@ import {
   deleteCorrectiveAction,
   uid,
 } from '@/lib/store';
-import type { AuditSession } from '@/lib/types';
+import type { AuditPlan } from '@/lib/types';
 import { ALL_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { FINDING_STATUSES, CA_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
@@ -41,7 +41,7 @@ const emptyCA = (item: ChecklistItem): Omit<CorrectiveAction, 'id' | 'createdAt'
 });
 
 export default function ChecklistPage() {
-  const [sessions, setSessions] = useState<AuditSession[]>([]);
+  const [sessions, setSessions] = useState<AuditPlan[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [caMap, setCaMap] = useState<Record<string, CorrectiveAction[]>>({});
 
@@ -62,7 +62,7 @@ export default function ChecklistPage() {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    setSessions(getSessions());
+    setSessions(getAuditPlans());
     const all = getChecklistItems();
     setItems(all);
     const cas = getCorrectiveActions();
@@ -82,7 +82,7 @@ export default function ChecklistPage() {
     }
   }, [sessions, selectedSession]);
 
-  const currentSession = sessions.find(s => s.id === selectedSession);
+  const currentSession = sessions.find(s => s.id === selectedSession) as AuditPlan | undefined;
 
   const clauseGroups = useMemo(() => {
     if (!currentSession) return [];
@@ -106,7 +106,8 @@ export default function ChecklistPage() {
 
   function openCreateItem() {
     setEditItem(null);
-    setItemForm(emptyItem(selectedSession, currentSession?.framework ?? 'ISO27001'));
+    const fw = currentSession?.standard === 'NIST_CSF' ? 'NIST_CSF' : 'ISO27001';
+    setItemForm(emptyItem(selectedSession, fw));
     setItemModal(true);
   }
 
@@ -172,8 +173,8 @@ export default function ChecklistPage() {
   }
 
   const availableClauses = useMemo(() => {
-    if (!currentSession) return ALL_CLAUSES;
-    return ALL_CLAUSES.filter(c => c.framework === currentSession.framework);
+    if (!currentSession || currentSession.standard === 'BOTH') return ALL_CLAUSES;
+    return ALL_CLAUSES.filter(c => c.framework === currentSession.standard);
   }, [currentSession]);
 
   const statusCounts = useMemo(() => {
@@ -215,7 +216,7 @@ export default function ChecklistPage() {
               onChange={e => { setSelectedSession(e.target.value); setFilterClause(''); setFilterStatus(''); }}
             >
               {sessions.length === 0 && <option value="">No sessions</option>}
-              {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {sessions.map(s => <option key={s.id} value={s.id}>{s.objective}</option>)}
             </select>
           </div>
           <div>

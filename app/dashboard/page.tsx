@@ -3,13 +3,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { CorrectiveAction, CorrectiveActionStatus } from '@/lib/types';
 import {
-  getSessions,
+  getAuditPlans,
   getChecklistItems,
   getCorrectiveActions,
   saveCorrectiveAction,
   getSessionProgress,
 } from '@/lib/store';
-import type { AuditSession, ChecklistItem, FindingStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, FindingStatus } from '@/lib/types';
 import StatusBadge, { FINDING_STATUSES, CA_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 
@@ -32,7 +32,7 @@ const STATUS_TEXT: Record<FindingStatus, string> = {
 };
 
 export default function DashboardPage() {
-  const [sessions, setSessions] = useState<AuditSession[]>([]);
+  const [sessions, setSessions] = useState<AuditPlan[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [cas, setCas] = useState<CorrectiveAction[]>([]);
   const [selectedSession, setSelectedSession] = useState<string>('all');
@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const [caForm, setCaForm] = useState<Partial<CorrectiveAction>>({});
 
   const reload = useCallback(() => {
-    setSessions(getSessions());
+    setSessions(getAuditPlans());
     setItems(getChecklistItems());
     setCas(getCorrectiveActions());
   }, []);
@@ -125,7 +125,7 @@ export default function DashboardPage() {
             onChange={e => setSelectedSession(e.target.value)}
           >
             <option value="all">All Sessions</option>
-            {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {sessions.map(s => <option key={s.id} value={s.id}>{s.objective}</option>)}
           </select>
         </div>
       </div>
@@ -202,7 +202,7 @@ export default function DashboardPage() {
                 return (
                   <div key={s.id}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-slate-700 truncate max-w-[140px]">{s.name}</span>
+                      <span className="font-medium text-slate-700 truncate max-w-[140px]">{s.objective}</span>
                       <span className="text-slate-500 flex-shrink-0">{prog.pct}%</span>
                     </div>
                     <div className="w-full bg-slate-100 rounded-full h-2">

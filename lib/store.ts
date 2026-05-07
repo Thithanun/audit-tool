@@ -1,9 +1,10 @@
-import type { AuditSession, ChecklistItem, CorrectiveAction } from './types';
+import type { AuditPlan, ChecklistItem, CorrectiveAction, PlanSession } from './types';
 
 const KEYS = {
   sessions: 'audit_sessions',
   checklist: 'audit_checklist',
   corrective: 'audit_corrective_actions',
+  planSessions: 'audit_plan_sessions',
 } as const;
 
 function load<T>(key: string): T[] {
@@ -23,26 +24,55 @@ export function uid(): string {
   return crypto.randomUUID();
 }
 
-// Sessions
-export function getSessions(): AuditSession[] {
-  return load<AuditSession>(KEYS.sessions);
+// ── Audit Plans (was AuditSession) ──────────────────────────────────────────
+
+export function getAuditPlans(): AuditPlan[] {
+  return load<AuditPlan>(KEYS.sessions);
 }
 
-export function saveSession(session: AuditSession): void {
-  const all = getSessions();
-  const idx = all.findIndex(s => s.id === session.id);
-  if (idx >= 0) all[idx] = session;
-  else all.push(session);
+// Backward-compat alias
+export const getSessions = getAuditPlans;
+
+export function saveAuditPlan(plan: AuditPlan): void {
+  const all = getAuditPlans();
+  const idx = all.findIndex(s => s.id === plan.id);
+  if (idx >= 0) all[idx] = plan;
+  else all.push(plan);
   save(KEYS.sessions, all);
 }
 
-export function deleteSession(id: string): void {
-  save(KEYS.sessions, getSessions().filter(s => s.id !== id));
+export const saveSession = saveAuditPlan;
+
+export function deleteAuditPlan(id: string): void {
+  save(KEYS.sessions, getAuditPlans().filter(s => s.id !== id));
   save(KEYS.checklist, getChecklistItems().filter(c => c.sessionId !== id));
   save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.sessionId !== id));
+  save(KEYS.planSessions, getPlanSessions().filter(ps => ps.planId !== id));
 }
 
-// Checklist
+export const deleteSession = deleteAuditPlan;
+
+// ── Plan Sessions (scheduling within a plan) ─────────────────────────────────
+
+export function getPlanSessions(planId?: string): PlanSession[] {
+  const all = load<PlanSession>(KEYS.planSessions);
+  return planId ? all.filter(ps => ps.planId === planId) : all;
+}
+
+export function savePlanSession(session: PlanSession): void {
+  const all = load<PlanSession>(KEYS.planSessions);
+  const idx = all.findIndex(ps => ps.id === session.id);
+  if (idx >= 0) all[idx] = session;
+  else all.push(session);
+  save(KEYS.planSessions, all);
+}
+
+export function deletePlanSession(id: string): void {
+  save(KEYS.planSessions, load<PlanSession>(KEYS.planSessions).filter(ps => ps.id !== id));
+}
+
+// ── Checklist ────────────────────────────────────────────────────────────────
+
 export function getChecklistItems(): ChecklistItem[] {
   return load<ChecklistItem>(KEYS.checklist);
 }
@@ -64,7 +94,8 @@ export function deleteChecklistItem(id: string): void {
   save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.checklistItemId !== id));
 }
 
-// Corrective Actions
+// ── Corrective Actions ────────────────────────────────────────────────────────
+
 export function getCorrectiveActions(): CorrectiveAction[] {
   return load<CorrectiveAction>(KEYS.corrective);
 }
@@ -85,7 +116,8 @@ export function deleteCorrectiveAction(id: string): void {
   save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.id !== id));
 }
 
-// Session progress calculation
+// ── Utilities ────────────────────────────────────────────────────────────────
+
 export function getSessionProgress(sessionId: string): { total: number; assessed: number; pct: number } {
   const items = getChecklistBySession(sessionId);
   const assessed = items.filter(i => i.status !== 'Not Assessed').length;

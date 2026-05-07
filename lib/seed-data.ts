@@ -168,7 +168,9 @@ export const NIST_CSF_CLAUSES: ClauseTemplate[] = [
   { clauseRef: 'RC.RP-01', clauseTitle: 'Recovery Plan', framework: 'NIST_CSF', requirement: 'The recovery portion of the incident response plan is executed once initiated from the incident response process.' },
 ];
 
-export const ALL_CLAUSES = [...ISMS_CLAUSES, ...ISO27001_CLAUSES, ...NIST_CSF_CLAUSES];
+// ALL_CLAUSES contains only ISO 27001 clauses (ISMS requirements + Annex A controls).
+// NIST_CSF_CLAUSES is kept exported but intentionally excluded here.
+export const ALL_CLAUSES = [...ISMS_CLAUSES, ...ISO27001_CLAUSES];
 
 export function getClausesByFramework(framework: 'ISO27001' | 'NIST_CSF') {
   return ALL_CLAUSES.filter(c => c.framework === framework);

@@ -24,6 +24,11 @@ const FINDING_STATUSES: FindingStatus[] = [
 
 const NEEDS_FINDING = new Set<FindingStatus>(['OBS', 'OFI', 'NC-Minor', 'NC-Major']);
 
+const NIST_PREFIX = /^(GV|ID|PR|DE|RS|RC)\./;
+function isNistItem(item: ChecklistItem) {
+  return item.framework === 'NIST_CSF' || NIST_PREFIX.test(item.clauseRef);
+}
+
 const GENERAL_KEYWORDS = [
   'เปิดประชุม', 'ปิดประชุม', 'ประชุม ia', 'สรุปผล',
   'opening', 'closing', 'wrap up', 'debrief',
@@ -179,7 +184,7 @@ export default function ChecklistPage() {
 
   const reload = useCallback(() => {
     setPlans(getAuditPlans());
-    setItems(getChecklistItems());
+    setItems(getChecklistItems().filter(i => !isNistItem(i)));
     setTemplates(getChecklistTemplates());
   }, []);
 

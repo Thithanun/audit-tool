@@ -51,6 +51,7 @@ export interface ChecklistItem {
   clauseRef: string;
   clauseTitle: string;
   requirement: string;
+  question?: string;
   status: FindingStatus;
   notes: string;
   evidence: string;

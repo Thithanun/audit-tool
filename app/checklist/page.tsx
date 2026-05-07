@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { ChecklistItem, FindingStatus, CorrectiveAction, CorrectiveActionStatus } from '@/lib/types';
+import type { ChecklistItem, FindingStatus, CorrectiveAction, CorrectiveActionStatus, PlanSession } from '@/lib/types';
 import {
   getAuditPlans,
   getChecklistItems,
@@ -10,12 +10,25 @@ import {
   getCorrectiveActions,
   saveCorrectiveAction,
   deleteCorrectiveAction,
+  getPlanSessions,
   uid,
 } from '@/lib/store';
 import type { AuditPlan } from '@/lib/types';
 import { ALL_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { FINDING_STATUSES, CA_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
+
+const GENERAL_KEYWORDS = [
+  'เปิดประชุม', 'ปิดประชุม', 'ประชุม ia', 'สรุปผล',
+  'opening', 'closing', 'wrap up', 'debrief',
+];
+
+function isGeneralSession(s: PlanSession): boolean {
+  const area = s.areaOfAudit.toLowerCase();
+  return GENERAL_KEYWORDS.some(kw => area.includes(kw));
+}
+
+const FILTER_STATUSES = FINDING_STATUSES.filter(s => s !== 'Not Assessed');
 
 const emptyItem = (sessionId = '', framework: ChecklistItem['framework'] = 'ISO27001'): Omit<ChecklistItem, 'id' | 'createdAt' | 'updatedAt'> => ({
   sessionId,
@@ -45,9 +58,10 @@ export default function ChecklistPage() {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [caMap, setCaMap] = useState<Record<string, CorrectiveAction[]>>({});
 
+  const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
-  const [filterClause, setFilterClause] = useState<string>('');
+  const [filterSession, setFilterSession] = useState<string>('');
   const [search, setSearch] = useState('');
 
   const [itemModal, setItemModal] = useState(false);
@@ -61,8 +75,9 @@ export default function ChecklistPage() {
 
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
-  const reload = useCallback(() => {
-    setSessions(getAuditPlans());
+  const reload = useCallback((planId?: string) => {
+    const plans = getAuditPlans();
+    setSessions(plans);
     const all = getChecklistItems();
     setItems(all);
     const cas = getCorrectiveActions();
@@ -72,37 +87,44 @@ export default function ChecklistPage() {
       map[ca.checklistItemId].push(ca);
     }
     setCaMap(map);
+    if (planId !== undefined) setPlanSessions(getPlanSessions(planId));
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
     if (sessions.length > 0 && !selectedSession) {
-      setSelectedSession(sessions[0].id);
+      const firstId = sessions[0].id;
+      setSelectedSession(firstId);
+      setPlanSessions(getPlanSessions(firstId));
     }
   }, [sessions, selectedSession]);
 
   const currentSession = sessions.find(s => s.id === selectedSession) as AuditPlan | undefined;
 
-  const clauseGroups = useMemo(() => {
-    if (!currentSession) return [];
-    const sessionItems = items.filter(i => i.sessionId === selectedSession);
-    const groups = new Set(sessionItems.map(i => i.clauseRef.split('.').slice(0, 2).join('.')));
-    return Array.from(groups).sort();
-  }, [items, selectedSession, currentSession]);
+  const auditPlanSessions = useMemo(() => {
+    return planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.trim() !== '');
+  }, [planSessions]);
 
   const filtered = useMemo(() => {
+    let sessionRefs: string[] = [];
+    if (filterSession) {
+      const ps = auditPlanSessions.find(s => s.id === filterSession);
+      if (ps) sessionRefs = ps.relatedClauses.split(',').map(r => r.trim()).filter(Boolean);
+    }
     return items.filter(i => {
       if (i.sessionId !== selectedSession) return false;
       if (filterStatus && i.status !== filterStatus) return false;
-      if (filterClause && !i.clauseRef.startsWith(filterClause)) return false;
+      if (filterSession && sessionRefs.length > 0) {
+        if (!sessionRefs.some(ref => i.clauseRef === ref || i.clauseRef.startsWith(ref + '.'))) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         return i.clauseRef.toLowerCase().includes(q) || i.clauseTitle.toLowerCase().includes(q) || i.notes.toLowerCase().includes(q);
       }
       return true;
     });
-  }, [items, selectedSession, filterStatus, filterClause, search]);
+  }, [items, selectedSession, filterStatus, filterSession, auditPlanSessions, search]);
 
   function openCreateItem() {
     setEditItem(null);
@@ -209,25 +231,35 @@ export default function ChecklistPage() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Session</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Audit Plan</label>
             <select
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedSession}
-              onChange={e => { setSelectedSession(e.target.value); setFilterClause(''); setFilterStatus(''); }}
+              onChange={e => {
+                const pid = e.target.value;
+                setSelectedSession(pid);
+                setFilterSession('');
+                setFilterStatus('');
+                setPlanSessions(getPlanSessions(pid));
+              }}
             >
-              {sessions.length === 0 && <option value="">No sessions</option>}
+              {sessions.length === 0 && <option value="">No plans</option>}
               {sessions.map(s => <option key={s.id} value={s.id}>{s.objective}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Clause Group</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Session</label>
             <select
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filterClause}
-              onChange={e => setFilterClause(e.target.value)}
+              value={filterSession}
+              onChange={e => setFilterSession(e.target.value)}
             >
-              <option value="">All Clauses</option>
-              {clauseGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              <option value="">All Sessions</option>
+              {auditPlanSessions.map(s => (
+                <option key={s.id} value={s.id}>
+                  Day {s.day}{s.time ? ` · ${s.time}` : ''} · {s.areaOfAudit}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -238,7 +270,7 @@ export default function ChecklistPage() {
               onChange={e => setFilterStatus(e.target.value)}
             >
               <option value="">All Statuses</option>
-              {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              {FILTER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
@@ -255,7 +287,7 @@ export default function ChecklistPage() {
         {/* Status summary pills */}
         {selectedSession && (
           <div className="flex flex-wrap gap-2 pt-1">
-            {FINDING_STATUSES.map(s => (
+            {FILTER_STATUSES.map(s => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(filterStatus === s ? '' : s)}

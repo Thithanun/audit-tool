@@ -1,0 +1,126 @@
+import type { ClauseTemplate } from './types';
+
+export const ISO27001_CLAUSES: ClauseTemplate[] = [
+  // A.5 Organizational controls
+  { clauseRef: 'A.5.1', clauseTitle: 'Policies for information security', framework: 'ISO27001', requirement: 'Information security policy and topic-specific policies shall be defined, approved by management, published, communicated to and acknowledged by relevant personnel and relevant interested parties, and reviewed at planned intervals and if significant changes occur.' },
+  { clauseRef: 'A.5.2', clauseTitle: 'Information security roles and responsibilities', framework: 'ISO27001', requirement: 'Information security roles and responsibilities shall be defined and allocated according to the organization\'s needs.' },
+  { clauseRef: 'A.5.3', clauseTitle: 'Segregation of duties', framework: 'ISO27001', requirement: 'Conflicting duties and conflicting areas of responsibility shall be segregated.' },
+  { clauseRef: 'A.5.4', clauseTitle: 'Management responsibilities', framework: 'ISO27001', requirement: 'Management shall require all personnel to apply information security in accordance with the established information security policy, topic-specific policies and procedures of the organization.' },
+  { clauseRef: 'A.5.5', clauseTitle: 'Contact with authorities', framework: 'ISO27001', requirement: 'The organization shall establish and maintain contact with relevant authorities.' },
+  { clauseRef: 'A.5.6', clauseTitle: 'Contact with special interest groups', framework: 'ISO27001', requirement: 'The organization shall establish and maintain contact with special interest groups or other specialist security forums and professional associations.' },
+  { clauseRef: 'A.5.7', clauseTitle: 'Threat intelligence', framework: 'ISO27001', requirement: 'Information relating to information security threats shall be collected and analysed to produce threat intelligence.' },
+  { clauseRef: 'A.5.8', clauseTitle: 'Information security in project management', framework: 'ISO27001', requirement: 'Information security shall be integrated into project management.' },
+  { clauseRef: 'A.5.9', clauseTitle: 'Inventory of information and other associated assets', framework: 'ISO27001', requirement: 'An inventory of information and other associated assets, including owners, shall be developed and maintained.' },
+  { clauseRef: 'A.5.10', clauseTitle: 'Acceptable use of information and other associated assets', framework: 'ISO27001', requirement: 'Rules for the acceptable use and procedures for handling information and other associated assets shall be identified, documented and implemented.' },
+  { clauseRef: 'A.5.11', clauseTitle: 'Return of assets', framework: 'ISO27001', requirement: 'Personnel and other interested parties shall return all the organization\'s assets in their possession upon change or termination of their employment, contract or agreement.' },
+  { clauseRef: 'A.5.12', clauseTitle: 'Classification of information', framework: 'ISO27001', requirement: 'Information shall be classified according to the information security needs of the organization based on confidentiality, integrity, availability and relevant interested party requirements.' },
+  { clauseRef: 'A.5.13', clauseTitle: 'Labelling of information', framework: 'ISO27001', requirement: 'An appropriate set of procedures for information labelling shall be developed and implemented in accordance with the information classification scheme adopted by the organization.' },
+  { clauseRef: 'A.5.14', clauseTitle: 'Information transfer', framework: 'ISO27001', requirement: 'Information transfer rules, procedures, or agreements shall be in place for all types of transfer facilities within the organization and between the organization and other parties.' },
+  { clauseRef: 'A.5.15', clauseTitle: 'Access control', framework: 'ISO27001', requirement: 'Rules to control physical and logical access to information and other associated assets shall be established and implemented based on business and information security requirements.' },
+  { clauseRef: 'A.5.16', clauseTitle: 'Identity management', framework: 'ISO27001', requirement: 'The full life cycle of identities shall be managed.' },
+  { clauseRef: 'A.5.17', clauseTitle: 'Authentication information', framework: 'ISO27001', requirement: 'Allocation and management of authentication information shall be controlled by a management process, including advising personnel on appropriate handling of authentication information.' },
+  { clauseRef: 'A.5.18', clauseTitle: 'Access rights', framework: 'ISO27001', requirement: 'Access rights to information and other associated assets shall be provisioned, reviewed, modified and removed in accordance with the organization\'s topic-specific policy on and rules for access control.' },
+  { clauseRef: 'A.5.19', clauseTitle: 'Information security in supplier relationships', framework: 'ISO27001', requirement: 'Processes and procedures shall be defined and implemented to manage the information security risks associated with the use of supplier\'s products or services.' },
+  { clauseRef: 'A.5.20', clauseTitle: 'Addressing information security within supplier agreements', framework: 'ISO27001', requirement: 'Relevant information security requirements shall be established and agreed with each supplier based on the type of supplier relationship.' },
+  { clauseRef: 'A.5.21', clauseTitle: 'Managing information security in the ICT supply chain', framework: 'ISO27001', requirement: 'Processes and procedures shall be defined and implemented to manage the information security risks associated with the ICT products and services supply chain.' },
+  { clauseRef: 'A.5.22', clauseTitle: 'Monitoring, review and change management of supplier services', framework: 'ISO27001', requirement: 'The organization shall regularly monitor, review, evaluate and manage change in supplier information security practices and service delivery.' },
+  { clauseRef: 'A.5.23', clauseTitle: 'Information security for use of cloud services', framework: 'ISO27001', requirement: 'Processes for acquisition, use, management and exit from cloud services shall be established in accordance with the organization\'s information security requirements.' },
+  { clauseRef: 'A.5.24', clauseTitle: 'Information security incident management planning and preparation', framework: 'ISO27001', requirement: 'The organization shall plan and prepare for managing information security incidents by defining, establishing and communicating information security incident management processes, roles and responsibilities.' },
+  { clauseRef: 'A.5.25', clauseTitle: 'Assessment and decision on information security events', framework: 'ISO27001', requirement: 'The organization shall assess information security events and decide if they are to be categorized as information security incidents.' },
+  { clauseRef: 'A.5.26', clauseTitle: 'Response to information security incidents', framework: 'ISO27001', requirement: 'Information security incidents shall be responded to in accordance with the documented procedures.' },
+  { clauseRef: 'A.5.27', clauseTitle: 'Learning from information security incidents', framework: 'ISO27001', requirement: 'Knowledge gained from information security incidents shall be used to strengthen and improve the information security controls.' },
+  { clauseRef: 'A.5.28', clauseTitle: 'Collection of evidence', framework: 'ISO27001', requirement: 'The organization shall establish and implement procedures for the identification, collection, acquisition and preservation of evidence related to information security events.' },
+  { clauseRef: 'A.5.29', clauseTitle: 'Information security during disruption', framework: 'ISO27001', requirement: 'The organization shall plan how to maintain information security at an appropriate level during disruption.' },
+  { clauseRef: 'A.5.30', clauseTitle: 'ICT readiness for business continuity', framework: 'ISO27001', requirement: 'ICT readiness shall be planned, implemented, maintained and tested based on business continuity objectives and ICT continuity requirements.' },
+  { clauseRef: 'A.5.31', clauseTitle: 'Legal, statutory, regulatory and contractual requirements', framework: 'ISO27001', requirement: 'Legal, statutory, regulatory and contractual requirements relevant to information security and the organization\'s approach to meet these requirements shall be identified, documented and kept up to date.' },
+  { clauseRef: 'A.5.32', clauseTitle: 'Intellectual property rights', framework: 'ISO27001', requirement: 'The organization shall implement appropriate procedures to protect intellectual property rights.' },
+  { clauseRef: 'A.5.33', clauseTitle: 'Protection of records', framework: 'ISO27001', requirement: 'Records shall be protected from loss, destruction, falsification, unauthorized access and unauthorized release.' },
+  { clauseRef: 'A.5.34', clauseTitle: 'Privacy and protection of PII', framework: 'ISO27001', requirement: 'The organization shall identify and meet the requirements regarding the preservation of privacy and protection of PII according to applicable laws and regulations and contractual requirements.' },
+  { clauseRef: 'A.5.35', clauseTitle: 'Independent review of information security', framework: 'ISO27001', requirement: 'The organization\'s approach to managing information security and its implementation including people, processes and technologies shall be reviewed independently at planned intervals, or when significant changes occur.' },
+  { clauseRef: 'A.5.36', clauseTitle: 'Compliance with policies, rules and standards for information security', framework: 'ISO27001', requirement: 'Compliance with the organization\'s information security policy, topic-specific policies, rules and standards shall be regularly reviewed.' },
+  { clauseRef: 'A.5.37', clauseTitle: 'Documented operating procedures', framework: 'ISO27001', requirement: 'Operating procedures for information processing facilities shall be documented and made available to personnel who need them.' },
+
+  // A.6 People controls
+  { clauseRef: 'A.6.1', clauseTitle: 'Screening', framework: 'ISO27001', requirement: 'Background verification checks on all candidates to become personnel shall be carried out prior to joining the organization and on an ongoing basis taking into consideration applicable laws, regulations and ethics and be proportional to the business requirements, the classification of the information to be accessed and the perceived risks.' },
+  { clauseRef: 'A.6.2', clauseTitle: 'Terms and conditions of employment', framework: 'ISO27001', requirement: 'The employment contractual agreements shall state the personnel\'s and the organization\'s responsibilities for information security.' },
+  { clauseRef: 'A.6.3', clauseTitle: 'Information security awareness, education and training', framework: 'ISO27001', requirement: 'Personnel of the organization and relevant interested parties shall receive appropriate information security awareness, education and training and regular updates of the organization\'s information security policy, topic-specific policies and procedures, as relevant for their job function.' },
+  { clauseRef: 'A.6.4', clauseTitle: 'Disciplinary process', framework: 'ISO27001', requirement: 'A disciplinary process shall be formalized and communicated to take actions against personnel and other relevant interested parties who have committed an information security policy violation.' },
+  { clauseRef: 'A.6.5', clauseTitle: 'Responsibilities after termination or change of employment', framework: 'ISO27001', requirement: 'Information security responsibilities and duties that remain valid after termination or change of employment shall be defined, enforced and communicated to relevant personnel and other interested parties.' },
+  { clauseRef: 'A.6.6', clauseTitle: 'Confidentiality or non-disclosure agreements', framework: 'ISO27001', requirement: 'Confidentiality or non-disclosure agreements reflecting the organization\'s needs for the protection of information shall be identified, documented, regularly reviewed and signed by personnel and other relevant interested parties.' },
+  { clauseRef: 'A.6.7', clauseTitle: 'Remote working', framework: 'ISO27001', requirement: 'Security measures shall be implemented when personnel are working remotely to protect information accessed, processed or stored outside the organization\'s premises.' },
+  { clauseRef: 'A.6.8', clauseTitle: 'Information security event reporting', framework: 'ISO27001', requirement: 'The organization shall provide a mechanism for personnel to report observed or suspected information security events through appropriate channels in a timely manner.' },
+
+  // A.8 Technological controls
+  { clauseRef: 'A.8.1', clauseTitle: 'User endpoint devices', framework: 'ISO27001', requirement: 'Information stored on, processed by or accessible via user endpoint devices shall be protected.' },
+  { clauseRef: 'A.8.2', clauseTitle: 'Privileged access rights', framework: 'ISO27001', requirement: 'The allocation and use of privileged access rights shall be restricted and managed.' },
+  { clauseRef: 'A.8.3', clauseTitle: 'Information access restriction', framework: 'ISO27001', requirement: 'Access to information and other associated assets shall be restricted in accordance with the established topic-specific policy on access control.' },
+  { clauseRef: 'A.8.4', clauseTitle: 'Access to source code', framework: 'ISO27001', requirement: 'Read and write access to source code, development tools and software libraries shall be appropriately managed.' },
+  { clauseRef: 'A.8.5', clauseTitle: 'Secure authentication', framework: 'ISO27001', requirement: 'Secure authentication technologies and procedures shall be implemented based on information access restrictions and the topic-specific policy on access control.' },
+  { clauseRef: 'A.8.6', clauseTitle: 'Capacity management', framework: 'ISO27001', requirement: 'The use of resources shall be monitored and adjusted in line with current and expected capacity requirements.' },
+  { clauseRef: 'A.8.7', clauseTitle: 'Protection against malware', framework: 'ISO27001', requirement: 'Protection against malware shall be implemented and supported by appropriate user awareness.' },
+  { clauseRef: 'A.8.8', clauseTitle: 'Management of technical vulnerabilities', framework: 'ISO27001', requirement: 'Information about technical vulnerabilities of information systems in use shall be obtained, the organization\'s exposure to such vulnerabilities shall be evaluated and appropriate measures shall be taken.' },
+  { clauseRef: 'A.8.9', clauseTitle: 'Configuration management', framework: 'ISO27001', requirement: 'Configurations, including security configurations, of hardware, software, services and networks shall be established, documented, implemented, monitored and reviewed.' },
+  { clauseRef: 'A.8.10', clauseTitle: 'Information deletion', framework: 'ISO27001', requirement: 'Information stored in information systems, devices or in any other storage media shall be deleted when no longer required.' },
+  { clauseRef: 'A.8.11', clauseTitle: 'Data masking', framework: 'ISO27001', requirement: 'Data masking shall be used in accordance with the organization\'s topic-specific policy on access control and other related topic-specific policies, and business requirements, taking applicable legislation into consideration.' },
+  { clauseRef: 'A.8.12', clauseTitle: 'Data leakage prevention', framework: 'ISO27001', requirement: 'Data leakage prevention measures shall be applied to systems, networks and any other devices that process, store or transmit sensitive information.' },
+  { clauseRef: 'A.8.13', clauseTitle: 'Information backup', framework: 'ISO27001', requirement: 'Backup copies of information, software and systems shall be maintained and regularly tested in accordance with the agreed topic-specific policy on backup.' },
+  { clauseRef: 'A.8.14', clauseTitle: 'Redundancy of information processing facilities', framework: 'ISO27001', requirement: 'Information processing facilities shall be implemented with redundancy sufficient to meet availability requirements.' },
+  { clauseRef: 'A.8.15', clauseTitle: 'Logging', framework: 'ISO27001', requirement: 'Logs that record activities, exceptions, faults and other relevant events shall be produced, stored, protected and analysed.' },
+  { clauseRef: 'A.8.16', clauseTitle: 'Monitoring activities', framework: 'ISO27001', requirement: 'Networks, systems and applications shall be monitored for anomalous behaviour and appropriate actions taken to evaluate potential information security incidents.' },
+  { clauseRef: 'A.8.17', clauseTitle: 'Clock synchronization', framework: 'ISO27001', requirement: 'The clocks of information processing systems used by the organization shall be synchronized to approved time sources.' },
+  { clauseRef: 'A.8.18', clauseTitle: 'Use of privileged utility programs', framework: 'ISO27001', requirement: 'The use of utility programs that can be capable of overriding system and application controls shall be restricted and tightly controlled.' },
+  { clauseRef: 'A.8.19', clauseTitle: 'Installation of software on operational systems', framework: 'ISO27001', requirement: 'Procedures and measures shall be implemented to securely manage software installation on operational systems.' },
+  { clauseRef: 'A.8.20', clauseTitle: 'Networks security', framework: 'ISO27001', requirement: 'Networks and network devices shall be secured, managed and controlled to protect information in systems and applications.' },
+  { clauseRef: 'A.8.21', clauseTitle: 'Security of network services', framework: 'ISO27001', requirement: 'Security mechanisms, service levels and service requirements of network services shall be identified, implemented and monitored.' },
+  { clauseRef: 'A.8.22', clauseTitle: 'Segregation of networks', framework: 'ISO27001', requirement: 'Groups of information services, users and information systems shall be segregated in the organization\'s networks.' },
+  { clauseRef: 'A.8.23', clauseTitle: 'Web filtering', framework: 'ISO27001', requirement: 'Access to external websites shall be managed to reduce exposure to malicious content.' },
+  { clauseRef: 'A.8.24', clauseTitle: 'Use of cryptography', framework: 'ISO27001', requirement: 'Rules for the effective use of cryptography, including cryptographic key management, shall be defined and implemented.' },
+  { clauseRef: 'A.8.25', clauseTitle: 'Secure development life cycle', framework: 'ISO27001', requirement: 'Rules for the secure development of software and systems shall be established and applied.' },
+  { clauseRef: 'A.8.26', clauseTitle: 'Application security requirements', framework: 'ISO27001', requirement: 'Information security requirements shall be identified, specified and approved when developing or acquiring applications.' },
+  { clauseRef: 'A.8.27', clauseTitle: 'Secure system architecture and engineering principles', framework: 'ISO27001', requirement: 'Principles for engineering secure systems shall be established, documented, maintained and applied to any information system development and integration activities.' },
+  { clauseRef: 'A.8.28', clauseTitle: 'Secure coding', framework: 'ISO27001', requirement: 'Secure coding principles shall be applied to software development.' },
+  { clauseRef: 'A.8.29', clauseTitle: 'Security testing in development and acceptance', framework: 'ISO27001', requirement: 'Security testing processes shall be defined and implemented in the development life cycle.' },
+  { clauseRef: 'A.8.30', clauseTitle: 'Outsourced development', framework: 'ISO27001', requirement: 'The organization shall direct, monitor and review the activities related to outsourced system development.' },
+  { clauseRef: 'A.8.31', clauseTitle: 'Separation of development, test and production environments', framework: 'ISO27001', requirement: 'Development, testing and production environments shall be separated and secured.' },
+  { clauseRef: 'A.8.32', clauseTitle: 'Change management', framework: 'ISO27001', requirement: 'Changes to information processing facilities and information systems shall be subject to change management procedures.' },
+  { clauseRef: 'A.8.33', clauseTitle: 'Test information', framework: 'ISO27001', requirement: 'Test information shall be appropriately selected, protected and managed.' },
+  { clauseRef: 'A.8.34', clauseTitle: 'Protection of information systems during audit testing', framework: 'ISO27001', requirement: 'Audit tests and other assurance activities involving assessment of operational systems shall be planned and agreed between the tester and appropriate management.' },
+
+  // A.10 Cryptography
+  { clauseRef: 'A.10.1', clauseTitle: 'Policy on the use of cryptographic controls', framework: 'ISO27001', requirement: 'A policy on the use of cryptographic controls for protection of information shall be developed and implemented.' },
+  { clauseRef: 'A.10.2', clauseTitle: 'Key management', framework: 'ISO27001', requirement: 'A policy on the use, protection and lifetime of cryptographic keys shall be developed and implemented through their whole lifecycle.' },
+];
+
+export const NIST_CSF_CLAUSES: ClauseTemplate[] = [
+  { clauseRef: 'GV.OC-01', clauseTitle: 'Organizational Context', framework: 'NIST_CSF', requirement: 'The organizational mission is understood and informs cybersecurity risk management.' },
+  { clauseRef: 'GV.OC-02', clauseTitle: 'Internal Stakeholders', framework: 'NIST_CSF', requirement: 'Internal stakeholders with cybersecurity risk management roles and responsibilities are identified and communicated to.' },
+  { clauseRef: 'GV.OC-03', clauseTitle: 'Legal Requirements', framework: 'NIST_CSF', requirement: 'Legal, regulatory, and contractual cybersecurity obligations of the organization are understood and managed.' },
+  { clauseRef: 'GV.RM-01', clauseTitle: 'Risk Management Strategy', framework: 'NIST_CSF', requirement: 'Risk management objectives are established and agreed to by organizational stakeholders.' },
+  { clauseRef: 'ID.AM-01', clauseTitle: 'Asset Management - Inventory', framework: 'NIST_CSF', requirement: 'Inventories of hardware managed by the organization are maintained.' },
+  { clauseRef: 'ID.AM-02', clauseTitle: 'Asset Management - Software', framework: 'NIST_CSF', requirement: 'Inventories of software, services, and systems managed by the organization are maintained.' },
+  { clauseRef: 'ID.RA-01', clauseTitle: 'Risk Assessment - Identification', framework: 'NIST_CSF', requirement: 'Vulnerabilities in assets are identified, validated, and recorded.' },
+  { clauseRef: 'PR.AA-01', clauseTitle: 'Identity Management', framework: 'NIST_CSF', requirement: 'Identities and credentials for authorized users, services, and hardware are managed by the organization.' },
+  { clauseRef: 'PR.DS-01', clauseTitle: 'Data Security - At Rest', framework: 'NIST_CSF', requirement: 'The confidentiality, integrity, and availability of data-at-rest are protected.' },
+  { clauseRef: 'DE.CM-01', clauseTitle: 'Continuous Monitoring', framework: 'NIST_CSF', requirement: 'Networks and network services are monitored to find potentially adverse events.' },
+  { clauseRef: 'RS.MA-01', clauseTitle: 'Incident Management', framework: 'NIST_CSF', requirement: 'The incident response plan is executed in coordination with relevant third parties once an incident is declared.' },
+  { clauseRef: 'RC.RP-01', clauseTitle: 'Recovery Plan', framework: 'NIST_CSF', requirement: 'The recovery portion of the incident response plan is executed once initiated from the incident response process.' },
+];
+
+export const ALL_CLAUSES = [...ISO27001_CLAUSES, ...NIST_CSF_CLAUSES];
+
+export function getClausesByFramework(framework: 'ISO27001' | 'NIST_CSF') {
+  return ALL_CLAUSES.filter(c => c.framework === framework);
+}
+
+export function getClauseGroups(framework: 'ISO27001' | 'NIST_CSF'): Record<string, ClauseTemplate[]> {
+  const clauses = getClausesByFramework(framework);
+  const groups: Record<string, ClauseTemplate[]> = {};
+  for (const clause of clauses) {
+    const group = framework === 'ISO27001'
+      ? clause.clauseRef.split('.').slice(0, 2).join('.')
+      : clause.clauseRef.split('-')[0];
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(clause);
+  }
+  return groups;
+}

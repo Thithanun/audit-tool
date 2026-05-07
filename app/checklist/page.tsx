@@ -398,6 +398,7 @@ export default function ChecklistPage() {
               <p className="text-xs text-slate-400 mt-0.5">
                 {selectedSession.date}{selectedSession.time ? ` · ${selectedSession.time}` : ''}
                 {selectedSession.auditee ? ` · Auditee: ${selectedSession.auditee}` : ''}
+                {selectedSession.mainAuditor ? ` · Auditor: ${selectedSession.mainAuditor}` : ''}
               </p>
             </div>
             <p className="text-xs text-slate-500 flex-shrink-0">

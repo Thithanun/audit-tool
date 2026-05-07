@@ -58,6 +58,49 @@ function isGeneralSession(s: PlanSession): boolean {
   return GENERAL_KEYWORDS.some(kw => area.includes(kw));
 }
 
+/**
+ * Parse a free-text relatedClauses string into concrete clauseRef strings.
+ *
+ * Supported patterns (case-insensitive, comma or "and" separated):
+ *   "Clause 5,7,9"        → all sub-clauses of 5, 7, 9  (e.g. 5.1, 5.2, 5.3)
+ *   "Annex A.5.4"         → A.5.4 (direct lookup)
+ *   "A.5.2, A.5.3"        → A.5.2, A.5.3
+ *   Mixed of the above    → union of all
+ */
+function parseRelatedClauses(text: string, allClauses: ClauseTemplate[]): string[] {
+  if (!text.trim()) return [];
+
+  // Normalise "and" → "," so we have a single separator
+  const normalised = text.replace(/\band\b/gi, ',');
+
+  const result: string[] = [];
+
+  // Pass 1 — Annex A controls: match A.X, A.X.Y, A.X.YZ …
+  const annexRe = /\bA\.\d+(?:\.\d+)*\b/g;
+  for (const ref of normalised.match(annexRe) ?? []) {
+    if (allClauses.some(c => c.clauseRef === ref)) result.push(ref);
+  }
+
+  // Pass 2 — ISMS clause numbers after the keyword "Clause"
+  // Strip Annex tokens first so their digits don't confuse the number scan
+  const withoutAnnex = normalised
+    .replace(/\bAnnex\b/gi, '')
+    .replace(/\bA\.\d+(?:\.\d+)*\b/g, '');
+
+  const clauseRe = /\bClause\b\s*([\d][\d\s,]*)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = clauseRe.exec(withoutAnnex)) !== null) {
+    const nums = m[1].split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
+    for (const num of nums) {
+      allClauses
+        .filter(c => c.clauseRef === num || c.clauseRef.startsWith(num + '.'))
+        .forEach(c => result.push(c.clauseRef));
+    }
+  }
+
+  return [...new Set(result)];
+}
+
 function clauseSummary(items: ChecklistItem[]): SummaryStatus {
   if (items.length === 0) return 'In Progress';
   if (items.some(i => ['OBS', 'OFI', 'NC-Minor', 'NC-Major'].includes(i.status))) return 'Issues Found';
@@ -184,7 +227,7 @@ export default function ChecklistPage() {
     if (selectedSessionId) {
       const session = auditSessions.find(s => s.id === selectedSessionId);
       if (!session) return [];
-      const refs = session.relatedClauses.split(',').map(r => r.trim()).filter(Boolean);
+      const refs = parseRelatedClauses(session.relatedClauses, ALL_CLAUSES);
       return refs.flatMap(ref => ALL_CLAUSES.find(c => c.clauseRef === ref) ?? []);
     }
     // All Sessions — derive clauses from stored items for this plan

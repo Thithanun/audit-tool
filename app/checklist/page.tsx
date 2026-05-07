@@ -1,420 +1,440 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { ChecklistItem, FindingStatus, CorrectiveAction, CorrectiveActionStatus, PlanSession } from '@/lib/types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import type { ChecklistItem, FindingStatus, PlanSession, AuditPlan } from '@/lib/types';
+import type { ClauseTemplate } from '@/lib/types';
 import {
   getAuditPlans,
   getChecklistItems,
   saveChecklistItem,
   deleteChecklistItem,
-  getCorrectiveActions,
-  saveCorrectiveAction,
-  deleteCorrectiveAction,
   getPlanSessions,
   uid,
 } from '@/lib/store';
-import type { AuditPlan } from '@/lib/types';
 import { ALL_CLAUSES } from '@/lib/seed-data';
-import StatusBadge, { FINDING_STATUSES, CA_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const FINDING_STATUSES: FindingStatus[] = [
+  'Not Assessed', 'Conformity', 'OBS', 'OFI', 'NC-Minor', 'NC-Major',
+];
 
 const GENERAL_KEYWORDS = [
   'เปิดประชุม', 'ปิดประชุม', 'ประชุม ia', 'สรุปผล',
   'opening', 'closing', 'wrap up', 'debrief',
 ];
 
+const STATUS_BADGE: Record<FindingStatus, string> = {
+  'Not Assessed': 'bg-slate-100 text-slate-500 border-slate-200',
+  'Conformity':   'bg-green-100 text-green-700 border-green-200',
+  'OBS':          'bg-orange-100 text-orange-700 border-orange-200',
+  'OFI':          'bg-blue-100 text-blue-700 border-blue-200',
+  'NC-Minor':     'bg-orange-200 text-orange-800 border-orange-300',
+  'NC-Major':     'bg-red-100 text-red-700 border-red-200',
+};
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type SummaryStatus = 'Passed' | 'Issues Found' | 'In Progress';
+
+const SUMMARY_BADGE: Record<SummaryStatus, string> = {
+  'Passed':       'bg-green-100 text-green-700 border-green-200',
+  'Issues Found': 'bg-red-100 text-red-700 border-red-200',
+  'In Progress':  'bg-yellow-100 text-yellow-700 border-yellow-200',
+};
+
+const SUMMARY_FILTER_ACTIVE: Record<string, string> = {
+  '':             'bg-slate-800 text-white border-slate-800',
+  'Passed':       'bg-green-600 text-white border-green-600',
+  'Issues Found': 'bg-red-600 text-white border-red-600',
+  'In Progress':  'bg-yellow-500 text-white border-yellow-500',
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function isGeneralSession(s: PlanSession): boolean {
   const area = s.areaOfAudit.toLowerCase();
   return GENERAL_KEYWORDS.some(kw => area.includes(kw));
 }
 
-const FILTER_STATUSES = FINDING_STATUSES.filter(s => s !== 'Not Assessed');
+function clauseSummary(items: ChecklistItem[]): SummaryStatus {
+  if (items.length === 0) return 'In Progress';
+  if (items.some(i => ['OBS', 'OFI', 'NC-Minor', 'NC-Major'].includes(i.status))) return 'Issues Found';
+  if (items.some(i => i.status === 'Not Assessed')) return 'In Progress';
+  return 'Passed';
+}
 
-const emptyItem = (sessionId = '', framework: ChecklistItem['framework'] = 'ISO27001'): Omit<ChecklistItem, 'id' | 'createdAt' | 'updatedAt'> => ({
-  sessionId,
-  framework,
-  clauseRef: '',
-  clauseTitle: '',
-  requirement: '',
-  status: 'Not Assessed',
-  notes: '',
-  evidence: '',
-});
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-const emptyCA = (item: ChecklistItem): Omit<CorrectiveAction, 'id' | 'createdAt' | 'updatedAt'> => ({
-  checklistItemId: item.id,
-  sessionId: item.sessionId,
-  clauseRef: item.clauseRef,
-  description: '',
-  rootCause: '',
-  owner: '',
-  dueDate: '',
-  status: 'Open',
-  closureNotes: '',
-});
+function SummaryBadge({ status }: { status: SummaryStatus }) {
+  return (
+    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${SUMMARY_BADGE[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="text-center py-16 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+      <p className="text-slate-500 text-sm">{message}</p>
+    </div>
+  );
+}
+
+interface RowProps {
+  item: ChecklistItem;
+  onStatusChange: (s: FindingStatus) => void;
+  onRemarkBlur: (r: string) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function ChecklistItemRow({ item, onStatusChange, onRemarkBlur, onEdit, onDelete }: RowProps) {
+  const displayQuestion = item.question?.trim() || item.clauseTitle || '(no question)';
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <p className="text-sm text-slate-800 flex-1 min-w-0 leading-snug">{displayQuestion}</p>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <select
+            className={`text-xs border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${STATUS_BADGE[item.status]}`}
+            value={item.status}
+            onChange={e => onStatusChange(e.target.value as FindingStatus)}
+          >
+            {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button
+            onClick={onEdit}
+            className="text-xs text-slate-400 hover:text-blue-600 px-1.5 py-1 rounded hover:bg-blue-50 transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={onDelete}
+            className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+      <textarea
+        key={`${item.id}-remark`}
+        className="w-full text-xs text-slate-600 border border-slate-200 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+        rows={2}
+        placeholder="Remark / evidence / observation..."
+        defaultValue={item.notes}
+        onBlur={e => onRemarkBlur(e.target.value)}
+      />
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
+const emptyForm = () => ({ question: '', status: 'Not Assessed' as FindingStatus, remark: '' });
 
 export default function ChecklistPage() {
-  const [sessions, setSessions] = useState<AuditPlan[]>([]);
-  const [items, setItems] = useState<ChecklistItem[]>([]);
-  const [caMap, setCaMap] = useState<Record<string, CorrectiveAction[]>>({});
-
+  const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
-  const [selectedSession, setSelectedSession] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
-  const [filterSession, setFilterSession] = useState<string>('');
-  const [search, setSearch] = useState('');
+  const [items, setItems] = useState<ChecklistItem[]>([]);
 
-  const [itemModal, setItemModal] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [filterSummary, setFilterSummary] = useState<'' | SummaryStatus>('');
+  const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
+
+  // Modal
+  const [addModalClause, setAddModalClause] = useState<ClauseTemplate | null>(null);
   const [editItem, setEditItem] = useState<ChecklistItem | null>(null);
-  const [itemForm, setItemForm] = useState(emptyItem());
+  const [form, setForm] = useState(emptyForm());
 
-  const [caModal, setCaModal] = useState(false);
-  const [caTarget, setCaTarget] = useState<ChecklistItem | null>(null);
-  const [editCA, setEditCA] = useState<CorrectiveAction | null>(null);
-  const [caForm, setCaForm] = useState<Omit<CorrectiveAction, 'id' | 'createdAt' | 'updatedAt'> | null>(null);
-
-  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  // ── Load ────────────────────────────────────────────────────────────────────
 
   const reload = useCallback((planId?: string) => {
-    const plans = getAuditPlans();
-    setSessions(plans);
-    const all = getChecklistItems();
-    setItems(all);
-    const cas = getCorrectiveActions();
-    const map: Record<string, CorrectiveAction[]> = {};
-    for (const ca of cas) {
-      if (!map[ca.checklistItemId]) map[ca.checklistItemId] = [];
-      map[ca.checklistItemId].push(ca);
-    }
-    setCaMap(map);
+    const p = getAuditPlans();
+    setPlans(p);
+    setItems(getChecklistItems());
     if (planId !== undefined) setPlanSessions(getPlanSessions(planId));
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
-    if (sessions.length > 0 && !selectedSession) {
-      const firstId = sessions[0].id;
-      setSelectedSession(firstId);
-      setPlanSessions(getPlanSessions(firstId));
+    if (plans.length > 0 && !selectedPlanId) {
+      const pid = plans[0].id;
+      setSelectedPlanId(pid);
+      setPlanSessions(getPlanSessions(pid));
     }
-  }, [sessions, selectedSession]);
+  }, [plans, selectedPlanId]);
 
-  const currentSession = sessions.find(s => s.id === selectedSession) as AuditPlan | undefined;
+  // ── Derived ─────────────────────────────────────────────────────────────────
 
-  const auditPlanSessions = useMemo(() => {
-    return planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.trim() !== '');
-  }, [planSessions]);
+  const auditSessions = useMemo(
+    () => planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.trim() !== ''),
+    [planSessions],
+  );
 
-  const filtered = useMemo(() => {
-    let sessionRefs: string[] = [];
-    if (filterSession) {
-      const ps = auditPlanSessions.find(s => s.id === filterSession);
-      if (ps) sessionRefs = ps.relatedClauses.split(',').map(r => r.trim()).filter(Boolean);
-    }
-    return items.filter(i => {
-      if (i.sessionId !== selectedSession) return false;
-      if (filterStatus && i.status !== filterStatus) return false;
-      if (filterSession && sessionRefs.length > 0) {
-        if (!sessionRefs.some(ref => i.clauseRef === ref || i.clauseRef.startsWith(ref + '.'))) return false;
-      }
-      if (search) {
-        const q = search.toLowerCase();
-        return i.clauseRef.toLowerCase().includes(q) || i.clauseTitle.toLowerCase().includes(q) || i.notes.toLowerCase().includes(q);
-      }
-      return true;
+  const selectedSession = auditSessions.find(s => s.id === selectedSessionId) ?? null;
+
+  const sessionClauses = useMemo((): ClauseTemplate[] => {
+    if (!selectedSession) return [];
+    const refs = selectedSession.relatedClauses.split(',').map(r => r.trim()).filter(Boolean);
+    return refs.flatMap(ref => {
+      const found = ALL_CLAUSES.find(c => c.clauseRef === ref);
+      return found ? [found] : [];
     });
-  }, [items, selectedSession, filterStatus, filterSession, auditPlanSessions, search]);
+  }, [selectedSession]);
 
-  function openCreateItem() {
-    setEditItem(null);
-    const fw = currentSession?.standard === 'NIST_CSF' ? 'NIST_CSF' : 'ISO27001';
-    setItemForm(emptyItem(selectedSession, fw));
-    setItemModal(true);
-  }
-
-  function openEditItem(item: ChecklistItem) {
-    setEditItem(item);
-    setItemForm({ sessionId: item.sessionId, framework: item.framework, clauseRef: item.clauseRef, clauseTitle: item.clauseTitle, requirement: item.requirement, status: item.status, notes: item.notes, evidence: item.evidence });
-    setItemModal(true);
-  }
-
-  function handleClauseSelect(clauseRef: string) {
-    const clause = ALL_CLAUSES.find(c => c.clauseRef === clauseRef);
-    if (clause) {
-      setItemForm(f => ({ ...f, clauseRef: clause.clauseRef, clauseTitle: clause.clauseTitle, requirement: clause.requirement }));
-    } else {
-      setItemForm(f => ({ ...f, clauseRef }));
+  const itemsByClause = useMemo(() => {
+    const map: Record<string, ChecklistItem[]> = {};
+    for (const item of items.filter(i => i.sessionId === selectedPlanId)) {
+      (map[item.clauseRef] ??= []).push(item);
     }
+    return map;
+  }, [items, selectedPlanId]);
+
+  const summaryCounts = useMemo(() => {
+    const counts: Record<SummaryStatus, number> = { 'Passed': 0, 'Issues Found': 0, 'In Progress': 0 };
+    for (const c of sessionClauses) counts[clauseSummary(itemsByClause[c.clauseRef] ?? [])]++;
+    return counts;
+  }, [sessionClauses, itemsByClause]);
+
+  const visibleClauses = useMemo(() => {
+    if (!filterSummary) return sessionClauses;
+    return sessionClauses.filter(c => clauseSummary(itemsByClause[c.clauseRef] ?? []) === filterSummary);
+  }, [sessionClauses, itemsByClause, filterSummary]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  function toggleClause(ref: string) {
+    setExpandedClauses(prev => {
+      const next = new Set(prev);
+      next.has(ref) ? next.delete(ref) : next.add(ref);
+      return next;
+    });
   }
 
-  function handleItemSubmit(e: React.FormEvent) {
+  function openAdd(clause: ClauseTemplate) {
+    setEditItem(null);
+    setForm(emptyForm());
+    setAddModalClause(clause);
+  }
+
+  function openEdit(item: ChecklistItem) {
+    setEditItem(item);
+    setForm({ question: item.question ?? '', status: item.status, remark: item.notes });
+    setAddModalClause(null);
+  }
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const now = new Date().toISOString();
     if (editItem) {
-      saveChecklistItem({ ...editItem, ...itemForm, updatedAt: now });
-    } else {
-      saveChecklistItem({ id: uid(), createdAt: now, updatedAt: now, ...itemForm });
+      saveChecklistItem({ ...editItem, question: form.question, status: form.status, notes: form.remark, updatedAt: now });
+    } else if (addModalClause) {
+      saveChecklistItem({
+        id: uid(), createdAt: now, updatedAt: now,
+        sessionId: selectedPlanId,
+        framework: addModalClause.framework,
+        clauseRef: addModalClause.clauseRef,
+        clauseTitle: addModalClause.clauseTitle,
+        requirement: addModalClause.requirement,
+        question: form.question,
+        status: form.status,
+        notes: form.remark,
+        evidence: '',
+      });
     }
-    setItemModal(false);
-    reload();
+    setAddModalClause(null);
+    setEditItem(null);
+    reload(selectedPlanId);
   }
 
-  function quickUpdateStatus(item: ChecklistItem, status: FindingStatus) {
-    const now = new Date().toISOString();
-    saveChecklistItem({ ...item, status, updatedAt: now });
-    reload();
+  function quickStatus(item: ChecklistItem, status: FindingStatus) {
+    const updated = { ...item, status, updatedAt: new Date().toISOString() };
+    saveChecklistItem(updated);
+    setItems(prev => prev.map(i => i.id === item.id ? updated : i));
   }
 
-  // CA management
-  function openAddCA(item: ChecklistItem) {
-    setCaTarget(item);
-    setEditCA(null);
-    setCaForm(emptyCA(item));
-    setCaModal(true);
+  function saveRemark(item: ChecklistItem, remark: string) {
+    if (remark === item.notes) return;
+    const updated = { ...item, notes: remark, updatedAt: new Date().toISOString() };
+    saveChecklistItem(updated);
+    setItems(prev => prev.map(i => i.id === item.id ? updated : i));
   }
 
-  function openEditCA(ca: CorrectiveAction, item: ChecklistItem) {
-    setCaTarget(item);
-    setEditCA(ca);
-    setCaForm({ checklistItemId: ca.checklistItemId, sessionId: ca.sessionId, clauseRef: ca.clauseRef, description: ca.description, rootCause: ca.rootCause, owner: ca.owner, dueDate: ca.dueDate, status: ca.status, closureNotes: ca.closureNotes });
-    setCaModal(true);
-  }
+  const modalOpen = addModalClause !== null || editItem !== null;
+  const modalTitle = editItem
+    ? 'Edit Checklist Item'
+    : `Add Checklist — ${addModalClause?.clauseRef}`;
 
-  function handleCASubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!caForm) return;
-    const now = new Date().toISOString();
-    if (editCA) {
-      saveCorrectiveAction({ ...editCA, ...caForm, updatedAt: now });
-    } else {
-      saveCorrectiveAction({ id: uid(), createdAt: now, updatedAt: now, ...caForm });
-    }
-    setCaModal(false);
-    reload();
-  }
-
-  const availableClauses = useMemo(() => {
-    if (!currentSession || currentSession.standard === 'BOTH') return ALL_CLAUSES;
-    return ALL_CLAUSES.filter(c => c.framework === currentSession.standard);
-  }, [currentSession]);
-
-  const statusCounts = useMemo(() => {
-    const sessionItems = items.filter(i => i.sessionId === selectedSession);
-    const counts: Record<string, number> = {};
-    for (const s of FINDING_STATUSES) counts[s] = 0;
-    for (const i of sessionItems) counts[i.status] = (counts[i.status] ?? 0) + 1;
-    return counts;
-  }, [items, selectedSession]);
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Checklist</h1>
-          <p className="text-slate-500 text-sm mt-1">Review controls and record findings</p>
-        </div>
-        <button
-          onClick={openCreateItem}
-          disabled={!selectedSession}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Item
-        </button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Checklist</h1>
+        <p className="text-slate-500 text-sm mt-1">Review controls and record findings by session</p>
       </div>
 
-      {/* Session selector + filters */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Plan + Session selectors */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Audit Plan</label>
             <select
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={selectedSession}
+              value={selectedPlanId}
               onChange={e => {
                 const pid = e.target.value;
-                setSelectedSession(pid);
-                setFilterSession('');
-                setFilterStatus('');
+                setSelectedPlanId(pid);
+                setSelectedSessionId('');
+                setFilterSummary('');
+                setExpandedClauses(new Set());
                 setPlanSessions(getPlanSessions(pid));
               }}
             >
-              {sessions.length === 0 && <option value="">No plans</option>}
-              {sessions.map(s => <option key={s.id} value={s.id}>{s.objective}</option>)}
+              {plans.length === 0 && <option value="">No plans</option>}
+              {plans.map(p => <option key={p.id} value={p.id}>{p.objective}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Session</label>
             <select
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filterSession}
-              onChange={e => setFilterSession(e.target.value)}
+              value={selectedSessionId}
+              onChange={e => {
+                setSelectedSessionId(e.target.value);
+                setFilterSummary('');
+                setExpandedClauses(new Set());
+              }}
             >
-              <option value="">All Sessions</option>
-              {auditPlanSessions.map(s => (
+              <option value="">— Select session —</option>
+              {auditSessions.map(s => (
                 <option key={s.id} value={s.id}>
                   Day {s.day}{s.time ? ` · ${s.time}` : ''} · {s.areaOfAudit}
                 </option>
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-            <select
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-            >
-              <option value="">All Statuses</option>
-              {FILTER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
-            <input
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Clause ref or title..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
         </div>
-
-        {/* Status summary pills */}
-        {selectedSession && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {FILTER_STATUSES.map(s => (
-              <button
-                key={s}
-                onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
-                className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${filterStatus === s ? 'ring-2 ring-blue-500' : ''}`}
-              >
-                <StatusBadge status={s} size="sm" /> ×{statusCounts[s] ?? 0}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Checklist table */}
-      {sessions.length === 0 ? (
-        <div className="text-center py-16 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-          <p className="text-slate-500">Create an audit session first</p>
+      {/* Filter bar */}
+      {selectedSession && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(['', 'Passed', 'Issues Found', 'In Progress'] as const).map(f => {
+            const count = f === '' ? sessionClauses.length : (summaryCounts[f] ?? 0);
+            const label = f === '' ? 'All' : f;
+            const active = filterSummary === f;
+            return (
+              <button
+                key={f}
+                onClick={() => setFilterSummary(f)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  active
+                    ? SUMMARY_FILTER_ACTIVE[f]
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {label} <span className={`ml-1 ${active ? 'opacity-80' : 'text-slate-400'}`}>({count})</span>
+              </button>
+            );
+          })}
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-          <p className="text-slate-500">No checklist items match your filters</p>
-        </div>
+      )}
+
+      {/* Content */}
+      {plans.length === 0 ? (
+        <EmptyState message="Create an audit plan first to use the checklist." />
+      ) : !selectedSession ? (
+        <EmptyState message="Select a session above to view its clauses and checklist items." />
+      ) : visibleClauses.length === 0 ? (
+        <EmptyState message={filterSummary ? `No clauses with status "${filterSummary}".` : 'No recognisable clauses found for this session. Check the Related Clauses field in the session.'} />
       ) : (
         <div className="space-y-2">
-          {filtered.map(item => {
-            const cas = caMap[item.id] ?? [];
-            const expanded = expandedItem === item.id;
+          {visibleClauses.map(clause => {
+            const clauseItems = itemsByClause[clause.clauseRef] ?? [];
+            const summary = clauseSummary(clauseItems);
+            const expanded = expandedClauses.has(clause.clauseRef);
+
             return (
-              <div key={item.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <button
-                    onClick={() => setExpandedItem(expanded ? null : item.id)}
-                    className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+              <div key={clause.clauseRef} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                {/* Accordion header */}
+                <button
+                  onClick={() => toggleClause(clause.clauseRef)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                >
+                  <svg
+                    className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
                   >
-                    <svg className={`w-4 h-4 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
 
                   <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded flex-shrink-0">
-                    {item.clauseRef}
+                    {clause.clauseRef}
                   </span>
 
                   <span className="text-sm font-medium text-slate-800 flex-1 min-w-0 truncate">
-                    {item.clauseTitle}
+                    {clause.clauseTitle}
                   </span>
 
-                  {cas.length > 0 && (
-                    <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full flex-shrink-0">
-                      {cas.length} CA
-                    </span>
-                  )}
+                  <span className="text-xs text-slate-400 flex-shrink-0">
+                    {clauseItems.length} item{clauseItems.length !== 1 ? 's' : ''}
+                  </span>
 
-                  <div className="flex-shrink-0">
-                    <select
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      value={item.status}
-                      onChange={e => quickUpdateStatus(item, e.target.value as FindingStatus)}
-                    >
-                      {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
+                  <SummaryBadge status={summary} />
+                </button>
 
-                  <button
-                    onClick={() => openEditItem(item)}
-                    className="text-xs text-slate-500 hover:text-blue-600 flex-shrink-0 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => { deleteChecklistItem(item.id); reload(); }}
-                    className="text-xs text-slate-500 hover:text-red-600 flex-shrink-0 px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-
+                {/* Expanded body */}
                 {expanded && (
-                  <div className="border-t border-slate-100 px-4 py-4 space-y-4 bg-slate-50">
-                    {item.requirement && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Requirement</p>
-                        <p className="text-sm text-slate-700">{item.requirement}</p>
-                      </div>
-                    )}
-                    {item.notes && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Notes / Findings</p>
-                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{item.notes}</p>
-                      </div>
-                    )}
-                    {item.evidence && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Evidence</p>
-                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{item.evidence}</p>
+                  <div className="border-t border-slate-100 bg-slate-50">
+                    {/* Control requirement */}
+                    {clause.requirement && (
+                      <div className="px-4 py-3 border-b border-slate-100">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                          Control Requirement
+                        </p>
+                        <p className="text-xs text-slate-600 leading-relaxed">{clause.requirement}</p>
                       </div>
                     )}
 
-                    {/* Corrective Actions */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Corrective Actions</p>
+                    {/* Checklist items */}
+                    <div className="px-4 py-3 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                          Checklist Items
+                        </p>
                         <button
-                          onClick={() => openAddCA(item)}
-                          className="text-xs text-blue-600 hover:underline"
+                          onClick={() => openAdd(clause)}
+                          className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                         >
-                          + Add CA
+                          + Add Checklist
                         </button>
                       </div>
-                      {cas.length === 0 ? (
-                        <p className="text-xs text-slate-400">No corrective actions</p>
+
+                      {clauseItems.length === 0 ? (
+                        <p className="text-xs text-slate-400 py-2 text-center">
+                          No checklist items yet —{' '}
+                          <button onClick={() => openAdd(clause)} className="text-blue-600 hover:underline">
+                            add the first one
+                          </button>
+                        </p>
                       ) : (
-                        <div className="space-y-2">
-                          {cas.map(ca => (
-                            <div key={ca.id} className="bg-white rounded-lg border border-slate-200 p-3 flex items-start gap-3">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-slate-800">{ca.description}</p>
-                                <div className="flex gap-3 text-xs text-slate-500 mt-1">
-                                  {ca.owner && <span>👤 {ca.owner}</span>}
-                                  {ca.dueDate && <span>📅 {ca.dueDate}</span>}
-                                </div>
-                              </div>
-                              <StatusBadge status={ca.status} type="ca" size="sm" />
-                              <button onClick={() => openEditCA(ca, item)} className="text-xs text-slate-400 hover:text-blue-600">Edit</button>
-                              <button onClick={() => { deleteCorrectiveAction(ca.id); reload(); }} className="text-xs text-slate-400 hover:text-red-600">✕</button>
-                            </div>
-                          ))}
-                        </div>
+                        clauseItems.map(item => (
+                          <ChecklistItemRow
+                            key={item.id}
+                            item={item}
+                            onStatusChange={status => quickStatus(item, status)}
+                            onRemarkBlur={remark => saveRemark(item, remark)}
+                            onEdit={() => openEdit(item)}
+                            onDelete={() => { deleteChecklistItem(item.id); reload(selectedPlanId); }}
+                          />
+                        ))
                       )}
                     </div>
                   </div>
@@ -425,164 +445,63 @@ export default function ChecklistPage() {
         </div>
       )}
 
-      {/* Item Modal */}
+      {/* Add / Edit Modal */}
       <Modal
-        open={itemModal}
-        onClose={() => setItemModal(false)}
-        title={editItem ? 'Edit Checklist Item' : 'Add Checklist Item'}
-        size="xl"
+        open={modalOpen}
+        onClose={() => { setAddModalClause(null); setEditItem(null); }}
+        title={modalTitle}
+        size="lg"
       >
-        <form onSubmit={handleItemSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Clause Reference</label>
-            <select
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={itemForm.clauseRef}
-              onChange={e => handleClauseSelect(e.target.value)}
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Question / Topic <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              rows={3}
               required
-            >
-              <option value="">Select clause...</option>
-              {availableClauses.map(c => (
-                <option key={c.clauseRef} value={c.clauseRef}>
-                  {c.clauseRef} — {c.clauseTitle}
-                </option>
-              ))}
-            </select>
+              placeholder="e.g., Are privileged accounts documented and reviewed regularly?"
+              value={form.question}
+              onChange={e => setForm(f => ({ ...f, question: e.target.value }))}
+            />
           </div>
-
-          {itemForm.requirement && (
-            <div className="bg-blue-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-blue-700 mb-1">Standard Requirement</p>
-              <p className="text-xs text-blue-800">{itemForm.requirement}</p>
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
             <select
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={itemForm.status}
-              onChange={e => setItemForm(f => ({ ...f, status: e.target.value as FindingStatus }))}
+              value={form.status}
+              onChange={e => setForm(f => ({ ...f, status: e.target.value as FindingStatus }))}
             >
               {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Notes / Findings</label>
-            <textarea
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              rows={4}
-              placeholder="Describe what was found during audit..."
-              value={itemForm.notes}
-              onChange={e => setItemForm(f => ({ ...f, notes: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Evidence</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Remark</label>
             <textarea
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               rows={3}
-              placeholder="Document references, screenshots, interviews..."
-              value={itemForm.evidence}
-              onChange={e => setItemForm(f => ({ ...f, evidence: e.target.value }))}
+              placeholder="Findings, evidence, observations..."
+              value={form.remark}
+              onChange={e => setForm(f => ({ ...f, remark: e.target.value }))}
             />
           </div>
-
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => setItemModal(false)} className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+            <button
+              type="button"
+              onClick={() => { setAddModalClause(null); setEditItem(null); }}
+              className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors"
+            >
               Cancel
             </button>
-            <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+            <button
+              type="submit"
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors"
+            >
               {editItem ? 'Save Changes' : 'Add Item'}
             </button>
           </div>
         </form>
-      </Modal>
-
-      {/* CA Modal */}
-      <Modal
-        open={caModal}
-        onClose={() => setCaModal(false)}
-        title={editCA ? 'Edit Corrective Action' : `Add Corrective Action — ${caTarget?.clauseRef}`}
-        size="lg"
-      >
-        {caForm && (
-          <form onSubmit={handleCASubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-              <textarea
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={3}
-                required
-                placeholder="Describe the corrective action required..."
-                value={caForm.description}
-                onChange={e => setCaForm(f => f ? { ...f, description: e.target.value } : f)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Root Cause</label>
-              <textarea
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={2}
-                placeholder="Identified root cause..."
-                value={caForm.rootCause}
-                onChange={e => setCaForm(f => f ? { ...f, rootCause: e.target.value } : f)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Owner</label>
-                <input
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Responsible person"
-                  value={caForm.owner}
-                  onChange={e => setCaForm(f => f ? { ...f, owner: e.target.value } : f)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
-                <input
-                  type="date"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={caForm.dueDate}
-                  onChange={e => setCaForm(f => f ? { ...f, dueDate: e.target.value } : f)}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-              <select
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={caForm.status}
-                onChange={e => setCaForm(f => f ? { ...f, status: e.target.value as CorrectiveActionStatus } : f)}
-              >
-                {CA_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            {caForm.status === 'Closed' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Closure Notes</label>
-                <textarea
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  rows={2}
-                  placeholder="How was this resolved?"
-                  value={caForm.closureNotes}
-                  onChange={e => setCaForm(f => f ? { ...f, closureNotes: e.target.value } : f)}
-                />
-              </div>
-            )}
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setCaModal(false)} className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
-                Cancel
-              </button>
-              <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">
-                {editCA ? 'Save Changes' : 'Add CA'}
-              </button>
-            </div>
-          </form>
-        )}
       </Modal>
     </div>
   );

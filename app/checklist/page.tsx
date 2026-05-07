@@ -142,7 +142,9 @@ export default function ChecklistPage() {
 
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'' | FindingStatus>('');
   const [filterSummary, setFilterSummary] = useState<'' | SummaryStatus>('');
+  const [search, setSearch] = useState('');
   const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
 
   // Modal
@@ -179,13 +181,16 @@ export default function ChecklistPage() {
   const selectedSession = auditSessions.find(s => s.id === selectedSessionId) ?? null;
 
   const sessionClauses = useMemo((): ClauseTemplate[] => {
-    if (!selectedSession) return [];
-    const refs = selectedSession.relatedClauses.split(',').map(r => r.trim()).filter(Boolean);
-    return refs.flatMap(ref => {
-      const found = ALL_CLAUSES.find(c => c.clauseRef === ref);
-      return found ? [found] : [];
-    });
-  }, [selectedSession]);
+    if (selectedSessionId) {
+      const session = auditSessions.find(s => s.id === selectedSessionId);
+      if (!session) return [];
+      const refs = session.relatedClauses.split(',').map(r => r.trim()).filter(Boolean);
+      return refs.flatMap(ref => ALL_CLAUSES.find(c => c.clauseRef === ref) ?? []);
+    }
+    // All Sessions — derive clauses from stored items for this plan
+    const refs = new Set(items.filter(i => i.sessionId === selectedPlanId).map(i => i.clauseRef));
+    return Array.from(refs).flatMap(ref => ALL_CLAUSES.find(c => c.clauseRef === ref) ?? []);
+  }, [selectedSessionId, auditSessions, items, selectedPlanId]);
 
   const itemsByClause = useMemo(() => {
     const map: Record<string, ChecklistItem[]> = {};
@@ -195,6 +200,18 @@ export default function ChecklistPage() {
     return map;
   }, [items, selectedPlanId]);
 
+  const PILL_STATUSES: FindingStatus[] = ['Conformity', 'OBS', 'OFI', 'NC-Minor', 'NC-Major'];
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = Object.fromEntries(PILL_STATUSES.map(s => [s, 0]));
+    for (const c of sessionClauses) {
+      for (const item of itemsByClause[c.clauseRef] ?? []) {
+        if (counts[item.status] !== undefined) counts[item.status]++;
+      }
+    }
+    return counts;
+  }, [sessionClauses, itemsByClause]);
+
   const summaryCounts = useMemo(() => {
     const counts: Record<SummaryStatus, number> = { 'Passed': 0, 'Issues Found': 0, 'In Progress': 0 };
     for (const c of sessionClauses) counts[clauseSummary(itemsByClause[c.clauseRef] ?? [])]++;
@@ -202,9 +219,23 @@ export default function ChecklistPage() {
   }, [sessionClauses, itemsByClause]);
 
   const visibleClauses = useMemo(() => {
-    if (!filterSummary) return sessionClauses;
-    return sessionClauses.filter(c => clauseSummary(itemsByClause[c.clauseRef] ?? []) === filterSummary);
-  }, [sessionClauses, itemsByClause, filterSummary]);
+    let clauses = sessionClauses;
+    if (search) {
+      const q = search.toLowerCase();
+      clauses = clauses.filter(c =>
+        c.clauseRef.toLowerCase().includes(q) || c.clauseTitle.toLowerCase().includes(q),
+      );
+    }
+    if (filterStatus) {
+      clauses = clauses.filter(c =>
+        (itemsByClause[c.clauseRef] ?? []).some(i => i.status === filterStatus),
+      );
+    }
+    if (filterSummary) {
+      clauses = clauses.filter(c => clauseSummary(itemsByClause[c.clauseRef] ?? []) === filterSummary);
+    }
+    return clauses;
+  }, [sessionClauses, itemsByClause, filterStatus, filterSummary, search]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -280,9 +311,10 @@ export default function ChecklistPage() {
         <p className="text-slate-500 text-sm mt-1">Review controls and record findings by session</p>
       </div>
 
-      {/* Plan + Session selectors */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Filter bar */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Audit Plan */}
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Audit Plan</label>
             <select
@@ -292,7 +324,9 @@ export default function ChecklistPage() {
                 const pid = e.target.value;
                 setSelectedPlanId(pid);
                 setSelectedSessionId('');
+                setFilterStatus('');
                 setFilterSummary('');
+                setSearch('');
                 setExpandedClauses(new Set());
                 setPlanSessions(getPlanSessions(pid));
               }}
@@ -301,6 +335,8 @@ export default function ChecklistPage() {
               {plans.map(p => <option key={p.id} value={p.id}>{p.objective}</option>)}
             </select>
           </div>
+
+          {/* Session */}
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Session</label>
             <select
@@ -308,11 +344,13 @@ export default function ChecklistPage() {
               value={selectedSessionId}
               onChange={e => {
                 setSelectedSessionId(e.target.value);
+                setFilterStatus('');
                 setFilterSummary('');
+                setSearch('');
                 setExpandedClauses(new Set());
               }}
             >
-              <option value="">— Select session —</option>
+              <option value="">All Sessions</option>
               {auditSessions.map(s => (
                 <option key={s.id} value={s.id}>
                   Day {s.day}{s.time ? ` · ${s.time}` : ''} · {s.areaOfAudit}
@@ -320,40 +358,61 @@ export default function ChecklistPage() {
               ))}
             </select>
           </div>
-        </div>
-      </div>
 
-      {/* Filter bar */}
-      {selectedSession && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {(['', 'Passed', 'Issues Found', 'In Progress'] as const).map(f => {
-            const count = f === '' ? sessionClauses.length : (summaryCounts[f] ?? 0);
-            const label = f === '' ? 'All' : f;
-            const active = filterSummary === f;
-            return (
-              <button
-                key={f}
-                onClick={() => setFilterSummary(f)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  active
-                    ? SUMMARY_FILTER_ACTIVE[f]
-                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                {label} <span className={`ml-1 ${active ? 'opacity-80' : 'text-slate-400'}`}>({count})</span>
-              </button>
-            );
-          })}
+          {/* Status */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+            <select
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value as '' | FindingStatus)}
+            >
+              <option value="">All Statuses</option>
+              {PILL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          {/* Search */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
+            <input
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Clause ref or title..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
         </div>
-      )}
+
+        {/* Summary pills */}
+        {selectedPlanId && (
+          <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+            {PILL_STATUSES.map(s => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
+                className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                  STATUS_BADGE[s]
+                } ${filterStatus === s ? 'ring-2 ring-blue-500' : ''}`}
+              >
+                {s} ×{statusCounts[s] ?? 0}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Content */}
       {plans.length === 0 ? (
         <EmptyState message="Create an audit plan first to use the checklist." />
-      ) : !selectedSession ? (
-        <EmptyState message="Select a session above to view its clauses and checklist items." />
       ) : visibleClauses.length === 0 ? (
-        <EmptyState message={filterSummary ? `No clauses with status "${filterSummary}".` : 'No recognisable clauses found for this session. Check the Related Clauses field in the session.'} />
+        <EmptyState message={
+          filterStatus || filterSummary || search
+            ? 'No clauses match the current filters.'
+            : selectedSessionId
+              ? 'No recognised clauses for this session. Check the Related Clauses field in the session.'
+              : 'No checklist items yet. Select a session and add checklist items.'
+        } />
       ) : (
         <div className="space-y-2">
           {visibleClauses.map(clause => {

@@ -14,6 +14,7 @@ import {
   getSessionProgress,
   uid,
 } from '@/lib/store';
+import { ISMS_CLAUSES, ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 
@@ -43,6 +44,34 @@ function dayDate(startDate: string, day: number): string {
   return d.toISOString().split('T')[0];
 }
 
+// ── Clause groups for session picker ─────────────────────────────────────────
+
+interface ClauseOption { ref: string; title: string }
+interface ClauseGroup { label: string; clauses: ClauseOption[] }
+
+const CLAUSE_GROUPS: ClauseGroup[] = [
+  {
+    label: 'ISMS Requirements (Clause 4–10)',
+    clauses: ISMS_CLAUSES.map(c => ({ ref: c.clauseRef, title: c.clauseTitle })),
+  },
+  {
+    label: 'Annex A – Organizational Controls (A.5)',
+    clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.5.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })),
+  },
+  {
+    label: 'Annex A – People Controls (A.6)',
+    clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.6.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })),
+  },
+  {
+    label: 'Annex A – Physical Controls (A.7)',
+    clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.7.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })),
+  },
+  {
+    label: 'Annex A – Technological Controls (A.8)',
+    clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.8.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })),
+  },
+];
+
 // ── empty forms ───────────────────────────────────────────────────────────────
 
 function emptyPlanForm(plan: AuditPlan): Omit<AuditPlan, 'id' | 'createdAt'> {
@@ -59,7 +88,7 @@ function emptyPlanForm(plan: AuditPlan): Omit<AuditPlan, 'id' | 'createdAt'> {
 }
 
 function emptySession(planId: string, nextDay = 1, date = ''): Omit<PlanSession, 'id' | 'createdAt'> {
-  return { planId, day: nextDay, date, time: '', areaOfAudit: '', relatedClauses: '', auditee: '', mainAuditor: '', iaTeam: [] };
+  return { planId, day: nextDay, date, time: '', areaOfAudit: '', relatedClauses: [], auditee: '', mainAuditor: '', iaTeam: [] };
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -147,6 +176,24 @@ export default function PlanDetailPage() {
     if (!name) return;
     setSessionForm(f => ({ ...f, iaTeam: [...f.iaTeam, name] }));
     setIaInput('');
+  }
+
+  function toggleClause(ref: string) {
+    setSessionForm(f => ({
+      ...f,
+      relatedClauses: f.relatedClauses.includes(ref)
+        ? f.relatedClauses.filter(r => r !== ref)
+        : [...f.relatedClauses, ref],
+    }));
+  }
+
+  function selectAllGroup(refs: string[]) {
+    setSessionForm(f => ({ ...f, relatedClauses: [...new Set([...f.relatedClauses, ...refs])] }));
+  }
+
+  function clearGroup(refs: string[]) {
+    const refsSet = new Set(refs);
+    setSessionForm(f => ({ ...f, relatedClauses: f.relatedClauses.filter(r => !refsSet.has(r)) }));
   }
 
   function handleSessionSave(e: React.FormEvent) {
@@ -317,8 +364,8 @@ export default function PlanDetailPage() {
                       <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">{s.time || '—'}</td>
                       <td className="px-4 py-3">
                         <div className="text-slate-800 font-medium">{s.areaOfAudit || '—'}</div>
-                        {s.relatedClauses && (
-                          <div className="text-xs text-slate-400 mt-0.5">Clauses: {s.relatedClauses}</div>
+                        {s.relatedClauses.length > 0 && (
+                          <div className="text-xs text-slate-400 mt-0.5">Clauses: {s.relatedClauses.join(', ')}</div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-slate-600">{s.auditee || '—'}</td>
@@ -420,7 +467,7 @@ export default function PlanDetailPage() {
         open={sessionModal}
         onClose={() => setSessionModal(false)}
         title={editSession ? 'Edit Session' : 'Add Session'}
-        size="lg"
+        size="xl"
       >
         <form onSubmit={handleSessionSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -452,10 +499,66 @@ export default function PlanDetailPage() {
               onChange={e => setSessionForm(f => ({ ...f, areaOfAudit: e.target.value }))} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Clause ที่เกี่ยวข้อง (Related Clauses)</label>
-            <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., A.5.1, A.8.15" value={sessionForm.relatedClauses}
-              onChange={e => setSessionForm(f => ({ ...f, relatedClauses: e.target.value }))} />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-slate-700">
+                Clause ที่เกี่ยวข้อง (Related Clauses)
+              </label>
+              {sessionForm.relatedClauses.length > 0 && (
+                <span className="text-xs text-blue-600 font-medium">
+                  {sessionForm.relatedClauses.length} selected
+                </span>
+              )}
+            </div>
+            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-64 overflow-y-auto bg-slate-50">
+              {CLAUSE_GROUPS.map(group => {
+                const groupRefs = group.clauses.map(c => c.ref);
+                return (
+                  <div key={group.label} className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                        {group.label}
+                      </span>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => selectAllGroup(groupRefs)}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => clearGroup(groupRefs)}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                      {group.clauses.map(c => (
+                        <label
+                          key={c.ref}
+                          className="flex items-start gap-1.5 cursor-pointer hover:bg-white rounded px-1 py-0.5 transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                            checked={sessionForm.relatedClauses.includes(c.ref)}
+                            onChange={() => toggleClause(c.ref)}
+                          />
+                          <span className="text-xs leading-tight">
+                            <span className="font-mono font-semibold text-slate-700">{c.ref}</span>
+                            {' '}
+                            <span className="text-slate-500">{c.title}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

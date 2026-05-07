@@ -37,7 +37,7 @@ export interface PlanSession {
   date: string;
   time: string;
   areaOfAudit: string;
-  relatedClauses: string;
+  relatedClauses: string[];
   auditee: string;
   mainAuditor: string;
   iaTeam: string[];

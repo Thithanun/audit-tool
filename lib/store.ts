@@ -1,159 +1,205 @@
-import type { AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession } from './types';
-import { parseClauseText } from './clause-parser';
-
-const KEYS = {
-  sessions: 'audit_sessions',
-  checklist: 'audit_checklist',
-  corrective: 'audit_corrective_actions',
-  planSessions: 'audit_plan_sessions',
-  templates: 'audit_checklist_templates',
-} as const;
-
-function load<T>(key: string): T[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? '[]') as T[];
-  } catch {
-    return [];
-  }
-}
-
-function save<T>(key: string, data: T[]): void {
-  localStorage.setItem(key, JSON.stringify(data));
-}
+import { supabase } from './supabase';
+import type {
+  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession,
+} from './types';
 
 export function uid(): string {
   return crypto.randomUUID();
 }
 
-// ── Audit Plans (was AuditSession) ──────────────────────────────────────────
+// All tables use { id: UUID, data: JSONB } shape.
+// plan_sessions also has plan_id: UUID at the top level for indexed filtering.
+// We store TypeScript objects (camelCase) directly in the data JSONB field.
 
-export function getAuditPlans(): AuditPlan[] {
-  return load<AuditPlan>(KEYS.sessions);
+type DataRow = { id: string; data: Record<string, unknown> };
+type PlanSessionRow = { id: string; plan_id: string; data: Record<string, unknown> };
+
+function fromRow<T extends { id: string }>(r: DataRow): T {
+  return { id: r.id, ...r.data } as T;
 }
 
-// Backward-compat alias
+function toRow<T extends { id: string }>(obj: T): DataRow {
+  const { id, ...rest } = obj as Record<string, unknown>;
+  return { id: id as string, data: rest };
+}
+
+// ── Audit Plans ───────────────────────────────────────────────────────────────
+
+export async function getAuditPlans(): Promise<AuditPlan[]> {
+  const { data, error } = await supabase
+    .from('audit_plans')
+    .select('id, data');
+  if (error) throw error;
+  return (data ?? []).map(r => fromRow<AuditPlan>(r as DataRow));
+}
+
 export const getSessions = getAuditPlans;
 
-export function saveAuditPlan(plan: AuditPlan): void {
-  const all = getAuditPlans();
-  const idx = all.findIndex(s => s.id === plan.id);
-  if (idx >= 0) all[idx] = plan;
-  else all.push(plan);
-  save(KEYS.sessions, all);
+export async function saveAuditPlan(plan: AuditPlan): Promise<void> {
+  const { error } = await supabase
+    .from('audit_plans')
+    .upsert(toRow(plan));
+  if (error) throw error;
 }
 
 export const saveSession = saveAuditPlan;
 
-export function deleteAuditPlan(id: string): void {
-  save(KEYS.sessions, getAuditPlans().filter(s => s.id !== id));
-  save(KEYS.checklist, getChecklistItems().filter(c => c.sessionId !== id));
-  save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.sessionId !== id));
-  save(KEYS.planSessions, getPlanSessions().filter(ps => ps.planId !== id));
+export async function deleteAuditPlan(id: string): Promise<void> {
+  const sessions = await getPlanSessions(id);
+  const allIds = [id, ...sessions.map(s => s.id)];
+  const idList = `(${allIds.join(',')})`;
+
+  await supabase.from('corrective_actions').delete().filter('data->>sessionId', 'in', idList);
+  await supabase.from('checklist_items').delete().filter('data->>sessionId', 'in', idList);
+  await supabase.from('plan_sessions').delete().eq('plan_id', id);
+  const { error } = await supabase.from('audit_plans').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export const deleteSession = deleteAuditPlan;
 
-// ── Plan Sessions (scheduling within a plan) ─────────────────────────────────
+// ── Plan Sessions ─────────────────────────────────────────────────────────────
 
-function migratePlanSession(raw: Record<string, unknown>): PlanSession {
-  const rc = raw.relatedClauses;
-  return {
-    ...(raw as unknown as PlanSession),
-    relatedClauses: typeof rc === 'string'
-      ? parseClauseText(rc)
-      : (Array.isArray(rc) ? (rc as string[]) : []),
-  };
+export async function getPlanSessions(planId?: string): Promise<PlanSession[]> {
+  let q = supabase.from('plan_sessions').select('id, plan_id, data');
+  if (planId) q = q.eq('plan_id', planId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: PlanSessionRow) => ({
+    id: r.id,
+    planId: r.plan_id,
+    ...r.data,
+  } as PlanSession));
 }
 
-export function getPlanSessions(planId?: string): PlanSession[] {
-  const all = load<Record<string, unknown>>(KEYS.planSessions).map(migratePlanSession);
-  return planId ? all.filter(ps => ps.planId === planId) : all;
+export async function savePlanSession(session: PlanSession): Promise<void> {
+  const { id, planId, ...rest } = session;
+  const { error } = await supabase
+    .from('plan_sessions')
+    .upsert({ id, plan_id: planId, data: rest });
+  if (error) throw error;
 }
 
-export function savePlanSession(session: PlanSession): void {
-  const all = load<PlanSession>(KEYS.planSessions);
-  const idx = all.findIndex(ps => ps.id === session.id);
-  if (idx >= 0) all[idx] = session;
-  else all.push(session);
-  save(KEYS.planSessions, all);
+export async function deletePlanSession(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('plan_sessions')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
 }
 
-export function deletePlanSession(id: string): void {
-  save(KEYS.planSessions, load<PlanSession>(KEYS.planSessions).filter(ps => ps.id !== id));
+// ── Checklist Items ───────────────────────────────────────────────────────────
+
+export async function getChecklistItems(): Promise<ChecklistItem[]> {
+  const { data, error } = await supabase
+    .from('checklist_items')
+    .select('id, data');
+  if (error) throw error;
+  return (data ?? []).map(r => fromRow<ChecklistItem>(r as DataRow));
 }
 
-// ── Checklist ────────────────────────────────────────────────────────────────
-
-export function getChecklistItems(): ChecklistItem[] {
-  return load<ChecklistItem>(KEYS.checklist);
+export async function getChecklistBySession(sessionId: string): Promise<ChecklistItem[]> {
+  const { data, error } = await supabase
+    .from('checklist_items')
+    .select('id, data')
+    .eq('data->>sessionId', sessionId);
+  if (error) throw error;
+  return (data ?? []).map(r => fromRow<ChecklistItem>(r as DataRow));
 }
 
-export function getChecklistBySession(sessionId: string): ChecklistItem[] {
-  return getChecklistItems().filter(c => c.sessionId === sessionId);
+export async function saveChecklistItem(item: ChecklistItem): Promise<void> {
+  const { error } = await supabase
+    .from('checklist_items')
+    .upsert(toRow(item));
+  if (error) throw error;
 }
 
-export function saveChecklistItem(item: ChecklistItem): void {
-  const all = getChecklistItems();
-  const idx = all.findIndex(c => c.id === item.id);
-  if (idx >= 0) all[idx] = item;
-  else all.push(item);
-  save(KEYS.checklist, all);
+export async function bulkSaveChecklistItems(items: ChecklistItem[]): Promise<void> {
+  if (items.length === 0) return;
+  const { error } = await supabase
+    .from('checklist_items')
+    .insert(items.map(toRow));
+  if (error) throw error;
 }
 
-export function deleteChecklistItem(id: string): void {
-  save(KEYS.checklist, getChecklistItems().filter(c => c.id !== id));
-  save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.checklistItemId !== id));
+export async function deleteChecklistItem(id: string): Promise<void> {
+  await supabase.from('corrective_actions').delete().eq('data->>checklistItemId', id);
+  const { error } = await supabase.from('checklist_items').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ── Corrective Actions ────────────────────────────────────────────────────────
 
-export function getCorrectiveActions(): CorrectiveAction[] {
-  return load<CorrectiveAction>(KEYS.corrective);
+export async function getCorrectiveActions(): Promise<CorrectiveAction[]> {
+  const { data, error } = await supabase
+    .from('corrective_actions')
+    .select('id, data');
+  if (error) throw error;
+  return (data ?? []).map(r => fromRow<CorrectiveAction>(r as DataRow));
 }
 
-export function getCorrectiveActionsBySession(sessionId: string): CorrectiveAction[] {
-  return getCorrectiveActions().filter(ca => ca.sessionId === sessionId);
+export async function getCorrectiveActionsBySession(sessionId: string): Promise<CorrectiveAction[]> {
+  const { data, error } = await supabase
+    .from('corrective_actions')
+    .select('id, data')
+    .eq('data->>sessionId', sessionId);
+  if (error) throw error;
+  return (data ?? []).map(r => fromRow<CorrectiveAction>(r as DataRow));
 }
 
-export function saveCorrectiveAction(ca: CorrectiveAction): void {
-  const all = getCorrectiveActions();
-  const idx = all.findIndex(c => c.id === ca.id);
-  if (idx >= 0) all[idx] = ca;
-  else all.push(ca);
-  save(KEYS.corrective, all);
+export async function saveCorrectiveAction(ca: CorrectiveAction): Promise<void> {
+  const { error } = await supabase
+    .from('corrective_actions')
+    .upsert(toRow(ca));
+  if (error) throw error;
 }
 
-export function deleteCorrectiveAction(id: string): void {
-  save(KEYS.corrective, getCorrectiveActions().filter(ca => ca.id !== id));
+export async function deleteCorrectiveAction(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('corrective_actions')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
 }
 
 // ── Checklist Templates ───────────────────────────────────────────────────────
 
-export function getChecklistTemplates(): ChecklistTemplate[] {
-  return load<ChecklistTemplate>(KEYS.templates);
+export async function getChecklistTemplates(): Promise<ChecklistTemplate[]> {
+  const { data, error } = await supabase
+    .from('checklist_templates')
+    .select('id, data');
+  if (error) throw error;
+  return (data ?? []).map(r => fromRow<ChecklistTemplate>(r as DataRow));
 }
 
-export function saveChecklistTemplate(t: ChecklistTemplate): void {
-  const all = getChecklistTemplates();
-  const idx = all.findIndex(x => x.id === t.id);
-  if (idx >= 0) all[idx] = t;
-  else all.push(t);
-  save(KEYS.templates, all);
+export async function saveChecklistTemplate(t: ChecklistTemplate): Promise<void> {
+  const { error } = await supabase
+    .from('checklist_templates')
+    .upsert(toRow(t));
+  if (error) throw error;
 }
 
-export function deleteChecklistTemplate(id: string): void {
-  save(KEYS.templates, getChecklistTemplates().filter(t => t.id !== id));
+export async function deleteChecklistTemplate(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('checklist_templates')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
 }
 
-// ── Utilities ────────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
-export function getSessionProgress(sessionId: string): { total: number; assessed: number; pct: number } {
-  const items = getChecklistBySession(sessionId);
-  const assessed = items.filter(i => i.status !== 'Not Assessed').length;
+export function computeSessionProgress(
+  items: ChecklistItem[],
+  sessionId: string,
+): { total: number; assessed: number; pct: number } {
+  const relevant = items.filter(i => i.sessionId === sessionId);
+  const assessed = relevant.filter(i => i.status !== 'Not Assessed').length;
   return {
-    total: items.length,
+    total: relevant.length,
     assessed,
-    pct: items.length === 0 ? 0 : Math.round((assessed / items.length) * 100),
+    pct: relevant.length === 0 ? 0 : Math.round((assessed / relevant.length) * 100),
   };
 }
+
+export const getSessionProgress = computeSessionProgress;

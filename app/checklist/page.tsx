@@ -180,12 +180,28 @@ export default function ChecklistPage() {
     status: 'Not Assessed' as FindingStatus,
   });
 
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
+
   // ── Load ────────────────────────────────────────────────────────────────────
 
-  const reload = useCallback(() => {
-    setPlans(getAuditPlans());
-    setItems(getChecklistItems().filter(i => !isNistItem(i)));
-    setTemplates(getChecklistTemplates());
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setDbError(null);
+    try {
+      const [ps, is, ts] = await Promise.all([
+        getAuditPlans(),
+        getChecklistItems(),
+        getChecklistTemplates(),
+      ]);
+      setPlans(ps);
+      setItems(is.filter(i => !isNistItem(i)));
+      setTemplates(ts);
+    } catch (e) {
+      setDbError(e instanceof Error ? e.message : 'Connection failed');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -194,7 +210,7 @@ export default function ChecklistPage() {
     if (plans.length > 0 && !selectedPlanId) {
       const pid = plans[0].id;
       setSelectedPlanId(pid);
-      setPlanSessions(getPlanSessions(pid));
+      getPlanSessions(pid).then(setPlanSessions).catch(() => {});
     }
   }, [plans, selectedPlanId]);
 
@@ -244,13 +260,14 @@ export default function ChecklistPage() {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function handleUpdate(updated: ChecklistItem) {
-    saveChecklistItem(updated);
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
+    saveChecklistItem(updated).catch(e => console.error('Save failed:', e));
   }
 
-  function handleDelete(id: string) {
-    deleteChecklistItem(id);
+  async function handleDelete(id: string) {
     setItems(prev => prev.filter(i => i.id !== id));
+    try { await deleteChecklistItem(id); }
+    catch (e) { console.error('Delete failed:', e); await reload(); }
   }
 
   function handleSaveAsTemplate(item: ChecklistItem) {
@@ -260,11 +277,11 @@ export default function ChecklistPage() {
       clauseRef: item.clauseRef,
       createdAt: new Date().toISOString(),
     };
-    saveChecklistTemplate(t);
     setTemplates(prev => [...prev, t]);
+    saveChecklistTemplate(t).catch(e => console.error('Template save failed:', e));
   }
 
-  function handleAddItem(e: React.FormEvent) {
+  async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
     const clauseInfo = ALL_CLAUSES.find(c => c.clauseRef === addForm.clauseRef);
     if (!clauseInfo) return;
@@ -283,13 +300,17 @@ export default function ChecklistPage() {
       createdAt: now,
       updatedAt: now,
     };
-    saveChecklistItem(newItem);
-    setItems(prev => [...prev, newItem]);
-    setAddModalOpen(false);
-    setAddForm({ clauseRef: '', question: '', status: 'Not Assessed' });
+    try {
+      await saveChecklistItem(newItem);
+      setItems(prev => [...prev, newItem]);
+      setAddModalOpen(false);
+      setAddForm({ clauseRef: '', question: '', status: 'Not Assessed' });
+    } catch (err) {
+      alert('Save failed: ' + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
-  function handleAddFromTemplate(t: ChecklistTemplate) {
+  async function handleAddFromTemplate(t: ChecklistTemplate) {
     const clauseInfo = ALL_CLAUSES.find(c => c.clauseRef === t.clauseRef);
     if (!clauseInfo) return;
     const now = new Date().toISOString();
@@ -307,12 +328,30 @@ export default function ChecklistPage() {
       createdAt: now,
       updatedAt: now,
     };
-    saveChecklistItem(newItem);
-    setItems(prev => [...prev, newItem]);
-    setAddModalOpen(false);
+    try {
+      await saveChecklistItem(newItem);
+      setItems(prev => [...prev, newItem]);
+      setAddModalOpen(false);
+    } catch (err) {
+      alert('Save failed: ' + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (dbError) return (
+    <div className="text-center py-16 bg-red-50 rounded-xl border border-red-200 mx-4 mt-8">
+      <p className="text-red-600 font-medium mb-1">Unable to connect to database</p>
+      <p className="text-sm text-red-500 mb-4">{dbError}</p>
+      <button onClick={reload} className="text-sm text-blue-600 hover:underline">Try again</button>
+    </div>
+  );
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-28">
@@ -330,12 +369,12 @@ export default function ChecklistPage() {
             <select
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedPlanId}
-              onChange={e => {
+              onChange={async e => {
                 const pid = e.target.value;
                 setSelectedPlanId(pid);
                 setSelectedSessionId('');
                 setFilterStatus('');
-                setPlanSessions(getPlanSessions(pid));
+                try { setPlanSessions(await getPlanSessions(pid)); } catch {}
               }}
             >
               {plans.length === 0 && <option value="">No plans</option>}
@@ -603,8 +642,8 @@ export default function ChecklistPage() {
                       </button>
                       <button
                         onClick={() => {
-                          deleteChecklistTemplate(t.id);
                           setTemplates(prev => prev.filter(x => x.id !== t.id));
+                          deleteChecklistTemplate(t.id).catch(e => console.error('Delete template failed:', e));
                         }}
                         className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors"
                       >

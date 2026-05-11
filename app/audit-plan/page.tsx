@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { AuditPlan, ChecklistItem, Standard, StandardUsed, SessionStatus } from '@/lib/types';
 import {
   getAuditPlans,
+  getChecklistItems,
   saveAuditPlan,
   deleteAuditPlan,
   bulkSaveChecklistItems,
@@ -77,15 +78,21 @@ export default function AuditPlanListPage() {
     setLoading(true);
     setDbError(null);
     try {
-      const { getChecklistItems } = await import('@/lib/store');
-      const [ps, is, ss] = await Promise.all([getAuditPlans(), getChecklistItems(), getStandards(true)]);
+      // Load core data — failures here block the page (critical path)
+      const [ps, is] = await Promise.all([getAuditPlans(), getChecklistItems()]);
       setPlans(ps);
       setAllItems(is);
-      setStandards(ss);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
       setLoading(false);
+    }
+    // Load standards separately — not critical; if the table doesn't exist yet
+    // the page still works (dropdown shows empty with a helper message).
+    try {
+      setStandards(await getStandards(true));
+    } catch (e) {
+      console.warn('[AuditPlan] Could not load standards (run supabase/standards-schema.sql):', e);
     }
   }, []);
 

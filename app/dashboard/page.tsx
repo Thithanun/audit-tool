@@ -33,7 +33,7 @@ const STATUS_TEXT: Record<FindingStatus, string> = {
 };
 
 export default function DashboardPage() {
-  const { canEdit } = useAuth();
+  const { canEditDashboard: canEdit } = useAuth();
   const [sessions, setSessions] = useState<AuditPlan[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [cas, setCas] = useState<CorrectiveAction[]>([]);

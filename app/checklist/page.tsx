@@ -174,7 +174,7 @@ function ChecklistItemCard({ item, index, canEdit, onUpdate, onDelete, onSaveAsT
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ChecklistPage() {
-  const { canEdit } = useAuth();
+  const { canEditChecklist: canEdit } = useAuth();
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);

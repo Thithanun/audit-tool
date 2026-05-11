@@ -76,7 +76,7 @@ function Spinner() {
 export default function PlanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { canEdit } = useAuth();
+  const { canEditAuditPlan: canEdit } = useAuth();
 
   const [plan, setPlan] = useState<AuditPlan | null>(null);
   const [sessions, setSessions] = useState<PlanSession[]>([]);

@@ -4,15 +4,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
-const NAV_LINKS = [
-  { href: '/audit-plan', label: 'Audit Plan' },
-  { href: '/checklist', label: 'Checklist' },
-  { href: '/dashboard', label: 'Dashboard' },
-];
-
 export default function Navbar() {
   const pathname = usePathname();
-  const { profile, isAdmin, signOut } = useAuth();
+  const { profile, isAdmin, canSeeChecklist, signOut } = useAuth();
+
+  const NAV_LINKS = [
+    { href: '/audit-plan', label: 'Audit Plan', visible: true },
+    { href: '/checklist',  label: 'Checklist',  visible: canSeeChecklist },
+    { href: '/dashboard',  label: 'Dashboard',  visible: true },
+  ];
 
   if (pathname === '/login') return null;
 
@@ -36,7 +36,7 @@ export default function Navbar() {
 
           {/* Nav links */}
           <div className="flex items-center gap-1">
-            {NAV_LINKS.map(link => {
+            {NAV_LINKS.filter(l => l.visible).map(link => {
               const active = pathname.startsWith(link.href);
               return (
                 <Link

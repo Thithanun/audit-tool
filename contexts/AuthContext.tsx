@@ -20,8 +20,14 @@ interface AuthContextValue {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
-  /** false only for viewers — admin and auditor can edit */
-  canEdit: boolean;
+  /** Admin only: create/edit/delete Audit Plans */
+  canEditAuditPlan: boolean;
+  /** Admin + Auditor: create/edit/delete Checklist items */
+  canEditChecklist: boolean;
+  /** Admin + Auditor: update Corrective Actions on Dashboard */
+  canEditDashboard: boolean;
+  /** Admin + Auditor: Checklist tab is visible; hidden for Viewer */
+  canSeeChecklist: boolean;
   isAdmin: boolean;
   signOut: () => Promise<void>;
 }
@@ -30,7 +36,10 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
   loading: true,
-  canEdit: false,
+  canEditAuditPlan: false,
+  canEditChecklist: false,
+  canEditDashboard: false,
+  canSeeChecklist: false,
   isAdmin: false,
   signOut: async () => {},
 });
@@ -81,11 +90,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.refresh();
   };
 
-  const canEdit = profile?.role !== 'viewer';
-  const isAdmin = profile?.role === 'admin';
+  const role = profile?.role ?? null;
+  const isAdmin          = role === 'admin';
+  const canEditAuditPlan = role === 'admin';
+  const canEditChecklist = role === 'admin' || role === 'auditor';
+  const canEditDashboard = role === 'admin' || role === 'auditor';
+  const canSeeChecklist  = role === 'admin' || role === 'auditor';
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, canEdit, isAdmin, signOut }}>
+    <AuthContext.Provider value={{
+      user, profile, loading,
+      canEditAuditPlan, canEditChecklist, canEditDashboard, canSeeChecklist,
+      isAdmin, signOut,
+    }}>
       {children}
     </AuthContext.Provider>
   );

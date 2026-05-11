@@ -51,7 +51,7 @@ function DbError({ message, onRetry }: { message: string; onRetry: () => void })
 }
 
 export default function AuditPlanListPage() {
-  const { canEdit } = useAuth();
+  const { canEditAuditPlan: canEdit } = useAuth();
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [allItems, setAllItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);

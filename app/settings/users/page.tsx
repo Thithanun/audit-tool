@@ -28,7 +28,7 @@ export default function UsersPage() {
   const { isAdmin, loading: authLoading } = useAuth();
 
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [inviteModal, setInviteModal] = useState(false);

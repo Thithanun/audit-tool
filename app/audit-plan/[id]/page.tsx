@@ -81,7 +81,7 @@ export default function PlanDetailPage() {
   const [plan, setPlan] = useState<AuditPlan | null>(null);
   const [sessions, setSessions] = useState<PlanSession[]>([]);
   const [planItems, setPlanItems] = useState<ChecklistItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 

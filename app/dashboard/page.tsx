@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string>('all');
   const [caEditTarget, setCaEditTarget] = useState<CorrectiveAction | null>(null);
   const [caForm, setCaForm] = useState<Partial<CorrectiveAction>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {

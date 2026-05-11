@@ -211,7 +211,9 @@ export default function ChecklistPage() {
     status: 'Not Assessed' as FindingStatus,
   });
 
-  const [loading, setLoading] = useState(true);
+  // Start as false — prevents permanent spinner if Next.js restores component
+  // from navigation cache before useEffect re-fires.
+  const [loading, setLoading] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
 
   // ── Load ──────────────────────────────────────────────────────────────────
@@ -220,18 +222,23 @@ export default function ChecklistPage() {
     setLoading(true);
     setDbError(null);
     try {
-      const [ps, is, ts] = await Promise.all([
+      // Critical path: plans + checklist items — page cannot function without these
+      const [ps, is] = await Promise.all([
         getAuditPlans(),
         getChecklistItems(),
-        getChecklistTemplates(),
       ]);
       setPlans(ps);
       setItems(is.filter(i => !isNistItem(i)));
-      setTemplates(ts);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
       setLoading(false);
+    }
+    // Templates are non-critical — load separately so they never block the page
+    try {
+      setTemplates(await getChecklistTemplates());
+    } catch (e) {
+      console.warn('[Checklist] Could not load templates:', e);
     }
   }, []);
 

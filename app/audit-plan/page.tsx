@@ -11,6 +11,7 @@ import {
   computeSessionProgress,
   uid,
 } from '@/lib/store';
+import { useAuth } from '@/contexts/AuthContext';
 import { ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
@@ -50,6 +51,7 @@ function DbError({ message, onRetry }: { message: string; onRetry: () => void })
 }
 
 export default function AuditPlanListPage() {
+  const { canEditAuditPlan: canEdit } = useAuth();
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [allItems, setAllItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,15 +130,17 @@ export default function AuditPlanListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Audit Plan</h1>
           <p className="text-slate-500 text-sm mt-1">Manage audit plans and schedule sessions</p>
         </div>
-        <button
-          onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Audit Plan
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Audit Plan
+          </button>
+        )}
       </div>
 
       {plans.length === 0 ? (
@@ -144,12 +148,14 @@ export default function AuditPlanListPage() {
           <div className="text-5xl mb-4">📋</div>
           <h3 className="text-slate-600 font-medium text-lg">No audit plans yet</h3>
           <p className="text-slate-400 text-sm mt-1 mb-4">Create a new plan to start your audit</p>
-          <button
-            onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            Create Audit Plan
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Create Audit Plan
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -199,12 +205,14 @@ export default function AuditPlanListPage() {
                   >
                     View Plan
                   </Link>
-                  <button
-                    onClick={() => setDeleteConfirm(plan.id)}
-                    className="text-sm text-slate-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    Delete
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => setDeleteConfirm(plan.id)}
+                      className="text-sm text-slate-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -1,26 +1,14 @@
 'use client';
 
-import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
-// useSearchParams() must live inside a <Suspense> boundary, otherwise Next.js
-// static prerendering throws "missing Suspense boundary" and the build fails.
-function InvalidTokenBanner() {
-  const searchParams = useSearchParams();
-  if (searchParams.get('error') !== 'invalid_token') return null;
-  return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 mb-4">
-      The invitation link has expired or is invalid. Please ask your admin to send a new invite.
-    </div>
-  );
-}
-
 export default function LoginPage() {
-  const [email, setEmail]     = useState('');
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]     = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading]   = useState(false);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -30,6 +18,7 @@ export default function LoginPage() {
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) throw authError;
+      // AuthContext will detect must_change_password and redirect automatically
       router.push('/');
       router.refresh();
     } catch (err) {
@@ -56,11 +45,6 @@ export default function LoginPage() {
 
         <h1 className="text-xl font-semibold text-slate-900 mb-1">Sign in</h1>
         <p className="text-sm text-slate-500 mb-6">Enter your credentials to continue</p>
-
-        {/* Suspense required by Next.js for useSearchParams() */}
-        <Suspense>
-          <InvalidTokenBanner />
-        </Suspense>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

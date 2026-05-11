@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, type UserProfile, type UserRole } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { inviteUser, updateUserRole, removeUser } from './actions';
+import { createUser, updateUserRole, removeUser } from './actions';
 import Modal from '@/components/Modal';
 
 const ROLES: UserRole[] = ['admin', 'auditor', 'viewer'];
@@ -31,13 +31,14 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [inviteModal, setInviteModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteName, setInviteName] = useState('');
-  const [inviteRole, setInviteRole] = useState<UserRole>('auditor');
-  const [inviting, setInviting] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [createModal, setCreateModal] = useState(false);
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createName, setCreateName] = useState('');
+  const [createRole, setCreateRole] = useState<UserRole>('auditor');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState(false);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -63,22 +64,23 @@ export default function UsersPage() {
     reload();
   }, [authLoading, isAdmin, router, reload]);
 
-  async function handleInvite(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setInviting(true);
-    setInviteError(null);
-    setInviteSuccess(false);
-    const { error } = await inviteUser(inviteEmail, inviteName, inviteRole);
+    setCreating(true);
+    setCreateError(null);
+    setCreateSuccess(false);
+    const { error } = await createUser(createEmail, createPassword, createName, createRole);
     if (error) {
-      setInviteError(error);
+      setCreateError(error);
     } else {
-      setInviteSuccess(true);
-      setInviteEmail('');
-      setInviteName('');
-      setInviteRole('auditor');
+      setCreateSuccess(true);
+      setCreateEmail('');
+      setCreatePassword('');
+      setCreateName('');
+      setCreateRole('auditor');
       await reload();
     }
-    setInviting(false);
+    setCreating(false);
   }
 
   async function handleRoleChange(userId: string, role: UserRole) {
@@ -113,13 +115,13 @@ export default function UsersPage() {
           <p className="text-slate-500 text-sm mt-1">Invite team members and manage roles</p>
         </div>
         <button
-          onClick={() => { setInviteModal(true); setInviteSuccess(false); setInviteError(null); }}
+          onClick={() => { setCreateModal(true); setCreateSuccess(false); setCreateError(null); }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Invite User
+          Create User
         </button>
       </div>
 
@@ -198,23 +200,25 @@ export default function UsersPage() {
         <span className="text-slate-400">— Admin: full access · Auditor: create/edit · Viewer: read-only</span>
       </div>
 
-      {/* Invite Modal */}
-      <Modal open={inviteModal} onClose={() => setInviteModal(false)} title="Invite User" size="md">
-        {inviteSuccess ? (
+      {/* Create User Modal */}
+      <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create User" size="md">
+        {createSuccess ? (
           <div className="text-center py-4">
-            <p className="text-green-600 font-medium mb-1">Invitation sent!</p>
+            <div className="text-3xl mb-3">✅</div>
+            <p className="text-green-600 font-medium mb-1">User created!</p>
             <p className="text-sm text-slate-500 mb-4">
-              An invite email has been sent. The user will set their password on first login.
+              Share the email and temporary password with the user directly.
+              They will be prompted to set a new password on first login.
             </p>
             <button
-              onClick={() => setInviteModal(false)}
+              onClick={() => setCreateModal(false)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
             >
               Done
             </button>
           </div>
         ) : (
-          <form onSubmit={handleInvite} className="space-y-4">
+          <form onSubmit={handleCreate} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Email <span className="text-red-500">*</span>
@@ -222,9 +226,23 @@ export default function UsersPage() {
               <input
                 type="email"
                 required
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
+                value={createEmail}
+                onChange={e => setCreateEmail(e.target.value)}
                 placeholder="user@company.com"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Temporary Password <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                minLength={8}
+                value={createPassword}
+                onChange={e => setCreatePassword(e.target.value)}
+                placeholder="Min 8 characters — tell the user directly"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -232,8 +250,8 @@ export default function UsersPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
               <input
                 type="text"
-                value={inviteName}
-                onChange={e => setInviteName(e.target.value)}
+                value={createName}
+                onChange={e => setCreateName(e.target.value)}
                 placeholder="Jane Smith"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -241,8 +259,8 @@ export default function UsersPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
               <select
-                value={inviteRole}
-                onChange={e => setInviteRole(e.target.value as UserRole)}
+                value={createRole}
+                onChange={e => setCreateRole(e.target.value as UserRole)}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {ROLES.map(r => (
@@ -251,26 +269,26 @@ export default function UsersPage() {
               </select>
             </div>
 
-            {inviteError && (
+            {createError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {inviteError}
+                {createError}
               </p>
             )}
 
             <div className="flex gap-3 pt-1">
               <button
                 type="button"
-                onClick={() => setInviteModal(false)}
+                onClick={() => setCreateModal(false)}
                 className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={inviting}
+                disabled={creating}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors"
               >
-                {inviting ? 'Sending…' : 'Send Invite'}
+                {creating ? 'Creating…' : 'Create User'}
               </button>
             </div>
           </form>

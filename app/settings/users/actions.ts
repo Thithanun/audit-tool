@@ -46,25 +46,28 @@ function toMsg(err: unknown): string {
 // error message reaches the browser in production (Next.js sanitises thrown
 // Server Action errors to a generic string for security).
 
-export async function inviteUser(
+export async function createUser(
   email: string,
+  password: string,
   name: string,
   role: string,
 ): Promise<{ error: string | null }> {
   try {
     await assertAdmin();
     const admin = await getAdminClient();
-    // NEXT_PUBLIC_SITE_URL must be set in Vercel env vars.
-    // Falls back to no redirectTo so Supabase uses the dashboard Site URL.
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
-    const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { name, role },
-      ...(siteUrl ? { redirectTo: `${siteUrl}/auth/confirm` } : {}),
+    // email_confirm: true skips the confirmation email — user logs in immediately.
+    // must_change_password is set to true by the DB column default, so the
+    // trigger-created profile row will already have the flag set correctly.
+    const { error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name, role },
     });
     if (error) throw new Error(error.message);
     return { error: null };
   } catch (err) {
-    console.error('[inviteUser]', toMsg(err));
+    console.error('[createUser]', toMsg(err));
     return { error: toMsg(err) };
   }
 }

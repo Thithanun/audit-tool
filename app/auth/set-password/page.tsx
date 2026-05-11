@@ -3,13 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { clearMustChangePassword } from './actions';
 
-/**
- * Shown after a user clicks an invite or password-reset link and the
- * /auth/confirm route has exchanged the token for a live session.
- * The user picks a new password; we call updateUser() which works because
- * the session cookie is already present.
- */
 export default function SetPasswordPage() {
   const router = useRouter();
   const [password, setPassword]   = useState('');
@@ -18,12 +13,11 @@ export default function SetPasswordPage() {
   const [loading, setLoading]     = useState(false);
   const [checking, setChecking]   = useState(true);
 
-  // Guard: if there's no active session the token exchange failed or the page
-  // was accessed directly — redirect to login with a helpful error.
+  // Redirect to login if there's no active session
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) {
-        router.replace('/login?error=invalid_token');
+        router.replace('/login');
       } else {
         setChecking(false);
       }
@@ -52,15 +46,26 @@ export default function SetPasswordPage() {
     }
 
     setLoading(true);
+
+    // 1. Update the password in Supabase Auth
     const { error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) {
       setError(updateError.message);
       setLoading(false);
-    } else {
-      // Session is now fully established — go to the app
-      router.push('/');
-      router.refresh();
+      return;
     }
+
+    // 2. Clear the must_change_password flag via server action (uses service role)
+    const { error: flagError } = await clearMustChangePassword();
+    if (flagError) {
+      setError('Password updated but could not clear flag: ' + flagError);
+      setLoading(false);
+      return;
+    }
+
+    // 3. Go to the app — AuthContext will re-fetch profile and see flag = false
+    router.push('/');
+    router.refresh();
   }
 
   return (
@@ -80,7 +85,7 @@ export default function SetPasswordPage() {
 
         <h1 className="text-xl font-semibold text-slate-900 mb-1">Set your password</h1>
         <p className="text-sm text-slate-500 mb-6">
-          Choose a password to complete your account setup
+          You must set a new password before continuing.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -126,7 +131,7 @@ export default function SetPasswordPage() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            {loading ? 'Setting password…' : 'Set password & sign in'}
+            {loading ? 'Saving…' : 'Set password & continue'}
           </button>
         </form>
       </div>

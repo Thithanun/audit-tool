@@ -3,7 +3,7 @@
 import {
   createContext, useContext, useEffect, useState, useCallback,
 } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
@@ -14,6 +14,7 @@ export interface UserProfile {
   email: string;
   name: string | null;
   role: UserRole;
+  must_change_password: boolean;
 }
 
 interface AuthContextValue {
@@ -29,6 +30,7 @@ interface AuthContextValue {
   /** Admin + Auditor: Checklist tab is visible; hidden for Viewer */
   canSeeChecklist: boolean;
   isAdmin: boolean;
+  mustChangePassword: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -41,11 +43,13 @@ const AuthContext = createContext<AuthContextValue>({
   canEditDashboard: false,
   canSeeChecklist: false,
   isAdmin: false,
+  mustChangePassword: false,
   signOut: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,11 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, name, role')
+      .select('id, email, name, role, must_change_password')
       .eq('id', userId)
       .single();
     if (error) {
-      // PGRST116 = no row found; anything else is unexpected
       if (error.code !== 'PGRST116') {
         console.error('[AuthContext] fetchProfile error:', error.code, error.message);
       } else {
@@ -93,6 +96,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
 
+  // Enforce password change: redirect any protected page to /auth/set-password
+  // when the flag is still true. Skip /auth/* and /login to avoid loops.
+  useEffect(() => {
+    if (
+      !loading &&
+      profile?.must_change_password === true &&
+      !pathname.startsWith('/auth/') &&
+      pathname !== '/login'
+    ) {
+      router.replace('/auth/set-password');
+    }
+  }, [loading, profile, pathname, router]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
@@ -100,20 +116,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const role = profile?.role ?? null;
-  const isAdmin          = role === 'admin';
-  const canEditAuditPlan = role === 'admin';
-  const canEditChecklist = role === 'admin' || role === 'auditor';
-  const canEditDashboard = role === 'admin' || role === 'auditor';
-  // Fail-open: hide Checklist ONLY when we are certain the role is 'viewer'.
-  // While profile is still loading (role === null) we show the tab so admin/
-  // auditor users never see it flicker away and back.
-  const canSeeChecklist  = role !== 'viewer';
+  const isAdmin            = role === 'admin';
+  const canEditAuditPlan   = role === 'admin';
+  const canEditChecklist   = role === 'admin' || role === 'auditor';
+  const canEditDashboard   = role === 'admin' || role === 'auditor';
+  const canSeeChecklist    = role !== 'viewer';
+  const mustChangePassword = profile?.must_change_password === true;
 
   return (
     <AuthContext.Provider value={{
       user, profile, loading,
       canEditAuditPlan, canEditChecklist, canEditDashboard, canSeeChecklist,
-      isAdmin, signOut,
+      isAdmin, mustChangePassword, signOut,
     }}>
       {children}
     </AuthContext.Provider>

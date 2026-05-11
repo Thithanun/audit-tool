@@ -75,12 +75,12 @@ export default function Navbar() {
               <div className="flex items-center gap-2">
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-medium text-slate-800 leading-tight">
-                    {profile.full_name || profile.email}
+                    {profile.name || profile.email}
                   </p>
                   <p className="text-xs text-slate-400 capitalize">{profile.role}</p>
                 </div>
                 <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-semibold text-slate-600">
-                  {(profile.full_name || profile.email).charAt(0).toUpperCase()}
+                  {(profile.name || profile.email).charAt(0).toUpperCase()}
                 </div>
               </div>
             )}

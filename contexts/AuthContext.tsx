@@ -12,7 +12,7 @@ export type UserRole = 'admin' | 'auditor' | 'viewer';
 export interface UserProfile {
   id: string;
   email: string;
-  full_name: string | null;
+  name: string | null;
   role: UserRole;
 }
 
@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, role')
+      .select('id, email, name, role')
       .eq('id', userId)
       .single();
     if (error) {

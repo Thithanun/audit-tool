@@ -34,7 +34,7 @@ export async function inviteUser(
   await assertAdmin();
   const admin = await getAdminClient();
   const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { full_name: fullName, role },
+    data: { name: fullName, role },
   });
   if (error) throw new Error(error.message);
 }

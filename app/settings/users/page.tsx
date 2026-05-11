@@ -47,7 +47,7 @@ export default function UsersPage() {
     setError(null);
     const { data, error: err } = await supabase
       .from('profiles')
-      .select('id, email, full_name, role')
+      .select('id, email, name, role')
       .order('email');
     if (err) {
       setError(err.message);
@@ -153,11 +153,11 @@ export default function UsersPage() {
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-semibold text-slate-600 shrink-0">
-                        {(u.full_name || u.email).charAt(0).toUpperCase()}
+                        {(u.name || u.email).charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <p className="font-medium text-slate-800">
-                          {u.full_name || <span className="text-slate-400 italic">No name</span>}
+                          {u.name || <span className="text-slate-400 italic">No name</span>}
                         </p>
                         <p className="text-xs text-slate-400">{u.email}</p>
                       </div>

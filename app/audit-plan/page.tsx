@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import type { AuditPlan, ChecklistItem, StandardUsed, SessionStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, Standard, StandardUsed, SessionStatus } from '@/lib/types';
 import {
   getAuditPlans,
   saveAuditPlan,
   deleteAuditPlan,
   bulkSaveChecklistItems,
   computeSessionProgress,
+  getStandards,
   uid,
 } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,9 +17,18 @@ import { ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 
-const STANDARD_OPTIONS: { value: StandardUsed; label: string }[] = [
-  { value: 'ISO27001', label: 'ISO 27001:2022' },
-];
+/** Fallback labels for plans created before the standards table existed. */
+const LEGACY_LABEL: Record<string, string> = {
+  ISO27001: 'ISO 27001:2022',
+  NIST_CSF: 'NIST CSF 2.0',
+  BOTH: 'ISO 27001 + NIST CSF',
+};
+
+function standardLabel(standardId: string, standards: Standard[]): string {
+  const s = standards.find(x => x.id === standardId);
+  if (s) return s.version ? `${s.name}:${s.version}` : s.name;
+  return LEGACY_LABEL[standardId] ?? standardId;
+}
 
 function fmtDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -27,8 +37,8 @@ function fmtDate(dateStr: string): string {
   });
 }
 
-const emptyPlan = (): Omit<AuditPlan, 'id' | 'createdAt'> => ({
-  objective: '', standard: 'ISO27001', scope: '', auditAreas: '',
+const emptyPlan = (firstStandardId = ''): Omit<AuditPlan, 'id' | 'createdAt'> => ({
+  objective: '', standard: firstStandardId, scope: '', auditAreas: '',
   leadAuditor: '', startDate: '', endDate: '', status: 'Planned',
 });
 
@@ -54,6 +64,7 @@ export default function AuditPlanListPage() {
   const { canEditAuditPlan: canEdit } = useAuth();
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [allItems, setAllItems] = useState<ChecklistItem[]>([]);
+  const [standards, setStandards] = useState<Standard[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -67,9 +78,10 @@ export default function AuditPlanListPage() {
     setDbError(null);
     try {
       const { getChecklistItems } = await import('@/lib/store');
-      const [ps, is] = await Promise.all([getAuditPlans(), getChecklistItems()]);
+      const [ps, is, ss] = await Promise.all([getAuditPlans(), getChecklistItems(), getStandards(true)]);
       setPlans(ps);
       setAllItems(is);
+      setStandards(ss);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
@@ -101,7 +113,7 @@ export default function AuditPlanListPage() {
       }));
       await bulkSaveChecklistItems(items);
       setPlanModal(false);
-      setPlanForm(emptyPlan());
+      setPlanForm(emptyPlan(standards[0]?.id ?? ''));
       await reload();
     } catch (e) {
       alert('Save failed: ' + (e instanceof Error ? e.message : String(e)));
@@ -132,7 +144,7 @@ export default function AuditPlanListPage() {
         </div>
         {canEdit && (
           <button
-            onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
+            onClick={() => { setPlanForm(emptyPlan(standards[0]?.id ?? '')); setPlanModal(true); }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -150,7 +162,7 @@ export default function AuditPlanListPage() {
           <p className="text-slate-400 text-sm mt-1 mb-4">Create a new plan to start your audit</p>
           {canEdit && (
             <button
-              onClick={() => { setPlanForm(emptyPlan()); setPlanModal(true); }}
+              onClick={() => { setPlanForm(emptyPlan(standards[0]?.id ?? '')); setPlanModal(true); }}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >
               Create Audit Plan
@@ -171,7 +183,7 @@ export default function AuditPlanListPage() {
                 </div>
 
                 <span className="text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full self-start">
-                  ISO 27001:2022
+                  {standardLabel(plan.standard, standards)}
                 </span>
 
                 <div className="flex flex-col gap-1 text-xs text-slate-500">
@@ -242,9 +254,19 @@ export default function AuditPlanListPage() {
               value={planForm.standard}
               onChange={e => setPlanForm(f => ({ ...f, standard: e.target.value as StandardUsed }))}
             >
-              {STANDARD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {standards.length === 0 && (
+                <option value="">No active standards — add one in Settings → Standards</option>
+              )}
+              {standards.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name}{s.version ? `:${s.version}` : ''}
+                </option>
+              ))}
             </select>
-            <p className="text-xs text-slate-400 mt-1">Checklist จะถูก auto-seed ด้วย Annex A controls ของ ISO 27001:2022</p>
+            <p className="text-xs text-slate-400 mt-1">
+              จัดการรายการมาตรฐานได้ที่{' '}
+              <a href="/settings/standards" className="text-blue-500 hover:underline">Settings → Standards</a>
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">ขอบเขตที่ตรวจประเมิน (Scope of Audit)</label>

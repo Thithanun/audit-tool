@@ -1,27 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+// useSearchParams() must live inside a <Suspense> boundary, otherwise Next.js
+// static prerendering throws "missing Suspense boundary" and the build fails.
+function InvalidTokenBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get('error') !== 'invalid_token') return null;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 mb-4">
+      The invitation link has expired or is invalid. Please ask your admin to send a new invite.
+    </div>
+  );
+}
+
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail]     = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const urlError = searchParams.get('error');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) throw authError;
       router.push('/');
       router.refresh();
@@ -35,6 +42,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 w-full max-w-md">
+
         {/* Brand */}
         <div className="flex items-center gap-3 mb-7">
           <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-sm font-bold text-white">
@@ -49,17 +57,14 @@ export default function LoginPage() {
         <h1 className="text-xl font-semibold text-slate-900 mb-1">Sign in</h1>
         <p className="text-sm text-slate-500 mb-6">Enter your credentials to continue</p>
 
-        {urlError === 'invalid_token' && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 mb-4">
-            The invitation link has expired or is invalid. Please ask your admin to send a new invite.
-          </div>
-        )}
+        {/* Suspense required by Next.js for useSearchParams() */}
+        <Suspense>
+          <InvalidTokenBanner />
+        </Suspense>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Email
-            </label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
             <input
               type="email"
               required
@@ -71,9 +76,7 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Password
-            </label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
             <input
               type="password"
               required

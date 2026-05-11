@@ -68,41 +68,39 @@ export default function UsersPage() {
     setInviting(true);
     setInviteError(null);
     setInviteSuccess(false);
-    try {
-      await inviteUser(inviteEmail, inviteName, inviteRole);
+    const { error } = await inviteUser(inviteEmail, inviteName, inviteRole);
+    if (error) {
+      setInviteError(error);
+    } else {
       setInviteSuccess(true);
       setInviteEmail('');
       setInviteName('');
       setInviteRole('auditor');
       await reload();
-    } catch (err) {
-      setInviteError(err instanceof Error ? err.message : 'Failed to invite user');
-    } finally {
-      setInviting(false);
     }
+    setInviting(false);
   }
 
   async function handleRoleChange(userId: string, role: UserRole) {
-    try {
-      await updateUserRole(userId, role);
+    const { error } = await updateUserRole(userId, role);
+    if (error) {
+      alert('Role update failed: ' + error);
+    } else {
       setUsers(us => us.map(u => u.id === userId ? { ...u, role } : u));
-    } catch (err) {
-      alert('Role update failed: ' + (err instanceof Error ? err.message : String(err)));
     }
   }
 
   async function handleRemove() {
     if (!deleteId) return;
     setDeleting(true);
-    try {
-      await removeUser(deleteId);
+    const { error } = await removeUser(deleteId);
+    if (error) {
+      alert('Remove failed: ' + error);
+    } else {
       setDeleteId(null);
       await reload();
-    } catch (err) {
-      alert('Remove failed: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setDeleting(false);
     }
+    setDeleting(false);
   }
 
   if (authLoading || loading) return <Spinner />;

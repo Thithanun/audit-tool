@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
@@ -12,11 +13,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geist.variable} h-full`}>
-      <body className="min-h-full bg-slate-50 antialiased">
-        <Navbar />
-        <main>{children}</main>
-      </body>
-    </html>
-  );
+  <html lang="en" className={ `${geist.variable} h-full` }>
+    <body 
+      className="min-h-full bg-slate-50 antialiased"
+      suppressHydrationWarning        
+    >
+        <AuthProvider>
+          <Navbar />
+          <main>{children}</main>
+        </AuthProvider>
+    </body>
+  </html>
+);
 }

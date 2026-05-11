@@ -18,6 +18,7 @@ import {
 import { ISMS_CLAUSES, ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ function Spinner() {
 export default function PlanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { canEdit } = useAuth();
 
   const [plan, setPlan] = useState<AuditPlan | null>(null);
   const [sessions, setSessions] = useState<PlanSession[]>([]);
@@ -259,16 +261,18 @@ export default function PlanDetailPage() {
           </svg>
           Audit Plans
         </Link>
-        <div className="flex gap-2">
-          <button onClick={openEditPlan}
-            className="text-sm border border-slate-300 text-slate-700 px-4 py-1.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
-            Edit Plan
-          </button>
-          <button onClick={() => setDeletePlanConfirm(true)}
-            className="text-sm border border-red-200 text-red-600 px-4 py-1.5 rounded-lg hover:bg-red-50 transition-colors font-medium">
-            Delete Plan
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <button onClick={openEditPlan}
+              className="text-sm border border-slate-300 text-slate-700 px-4 py-1.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
+              Edit Plan
+            </button>
+            <button onClick={() => setDeletePlanConfirm(true)}
+              className="text-sm border border-red-200 text-red-600 px-4 py-1.5 rounded-lg hover:bg-red-50 transition-colors font-medium">
+              Delete Plan
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Plan header */}
@@ -331,19 +335,25 @@ export default function PlanDetailPage() {
             Sessions
             {sessions.length > 0 && <span className="ml-2 text-xs font-normal text-slate-400">({sessions.length})</span>}
           </h2>
-          <button onClick={openAddSession}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Session
-          </button>
+          {canEdit && (
+            <button onClick={openAddSession}
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Session
+            </button>
+          )}
         </div>
 
         {sessions.length === 0 ? (
           <div className="text-center py-12 text-slate-400 text-sm">
-            No sessions scheduled yet —{' '}
-            <button onClick={openAddSession} className="text-blue-600 hover:underline">add the first one</button>
+            No sessions scheduled yet
+            {canEdit && (
+              <>{' '}—{' '}
+                <button onClick={openAddSession} className="text-blue-600 hover:underline">add the first one</button>
+              </>
+            )}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -382,14 +392,16 @@ export default function PlanDetailPage() {
                           <div className="text-xs text-slate-400 mt-0.5">IA: {s.iaTeam.join(', ')}</div>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openEditSession(s)}
-                            className="text-xs text-slate-500 hover:text-blue-600 font-medium transition-colors">Edit</button>
-                          <button onClick={() => setDeleteSessionId(s.id)}
-                            className="text-xs text-slate-400 hover:text-red-500 transition-colors">✕</button>
-                        </div>
-                      </td>
+                      {canEdit && (
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openEditSession(s)}
+                              className="text-xs text-slate-500 hover:text-blue-600 font-medium transition-colors">Edit</button>
+                            <button onClick={() => setDeleteSessionId(s.id)}
+                              className="text-xs text-slate-400 hover:text-red-500 transition-colors">✕</button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </React.Fragment>

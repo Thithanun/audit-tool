@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { parseClauseText } from './clause-parser';
 import type {
   AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession,
 } from './types';
@@ -8,120 +7,28 @@ export function uid(): string {
   return crypto.randomUUID();
 }
 
-// ── Row mappers (DB snake_case ↔ TS camelCase) ────────────────────────────────
+// All tables use { id: UUID, data: JSONB } shape.
+// plan_sessions also has plan_id: UUID at the top level for indexed filtering.
+// We store TypeScript objects (camelCase) directly in the data JSONB field.
 
-type Row = Record<string, unknown>;
+type DataRow = { id: string; data: Record<string, unknown> };
+type PlanSessionRow = { id: string; plan_id: string; data: Record<string, unknown> };
 
-function toAuditPlan(r: Row): AuditPlan {
-  return {
-    id:          r.id as string,
-    objective:   (r.objective   as string) ?? '',
-    standard:    (r.standard    as string) ?? 'ISO27001',
-    scope:       (r.scope       as string) ?? '',
-    auditAreas:  (r.audit_areas as string) ?? '',
-    leadAuditor: (r.lead_auditor as string) ?? '',
-    startDate:   (r.start_date  as string) ?? '',
-    endDate:     (r.end_date    as string) ?? '',
-    status:      (r.status      as string) ?? 'Planned',
-    createdAt:   (r.created_at  as string) ?? '',
-  } as AuditPlan;
+function fromRow<T extends { id: string }>(r: DataRow): T {
+  return { id: r.id, ...r.data } as T;
 }
 
-function fromAuditPlan(p: AuditPlan) {
-  return {
-    id: p.id, objective: p.objective, standard: p.standard,
-    scope: p.scope, audit_areas: p.auditAreas, lead_auditor: p.leadAuditor,
-    start_date: p.startDate, end_date: p.endDate, status: p.status,
-    created_at: p.createdAt,
-  };
+function toRow<T extends { id: string }>(obj: T): DataRow {
+  const { id, ...rest } = obj as Record<string, unknown>;
+  return { id: id as string, data: rest };
 }
 
-function toPlanSession(r: Row): PlanSession {
-  const rc = r.related_clauses;
-  return {
-    id:             r.id as string,
-    planId:         (r.plan_id       as string) ?? '',
-    day:            (r.day           as number) ?? 1,
-    date:           (r.date          as string) ?? '',
-    time:           (r.time          as string) ?? '',
-    areaOfAudit:    (r.area_of_audit as string) ?? '',
-    relatedClauses: typeof rc === 'string'
-      ? parseClauseText(rc)
-      : (Array.isArray(rc) ? (rc as string[]) : []),
-    auditee:     (r.auditee     as string) ?? '',
-    mainAuditor: (r.main_auditor as string) ?? '',
-    iaTeam:      Array.isArray(r.ia_team) ? (r.ia_team as string[]) : [],
-    createdAt:   (r.created_at  as string) ?? '',
-  };
-}
-
-function fromPlanSession(s: PlanSession) {
-  return {
-    id: s.id, plan_id: s.planId, day: s.day, date: s.date, time: s.time,
-    area_of_audit: s.areaOfAudit, related_clauses: s.relatedClauses,
-    auditee: s.auditee, main_auditor: s.mainAuditor, ia_team: s.iaTeam,
-    created_at: s.createdAt,
-  };
-}
-
-function toChecklistItem(r: Row): ChecklistItem {
-  return {
-    id:             r.id as string,
-    sessionId:      (r.session_id   as string) ?? '',
-    framework:      (r.framework    as string) ?? 'ISO27001',
-    clauseRef:      (r.clause_ref   as string) ?? '',
-    clauseTitle:    (r.clause_title as string) ?? '',
-    requirement:    (r.requirement  as string) ?? '',
-    question:       r.question       as string | undefined,
-    status:         (r.status        as string) ?? 'Not Assessed',
-    notes:          (r.notes         as string) ?? '',
-    evidence:       (r.evidence      as string) ?? '',
-    recommendation: r.recommendation as string | undefined,
-    dueDate:        r.due_date       as string | undefined,
-    itemNumber:     r.item_number    as number | undefined,
-    createdAt:      (r.created_at   as string) ?? '',
-    updatedAt:      (r.updated_at   as string) ?? '',
-  } as ChecklistItem;
-}
-
-function fromChecklistItem(i: ChecklistItem) {
-  return {
-    id: i.id, session_id: i.sessionId, framework: i.framework,
-    clause_ref: i.clauseRef, clause_title: i.clauseTitle,
-    requirement: i.requirement, question: i.question ?? null,
-    status: i.status, notes: i.notes, evidence: i.evidence,
-    recommendation: i.recommendation ?? null,
-    due_date: i.dueDate ?? null, item_number: i.itemNumber ?? null,
-    created_at: i.createdAt, updated_at: i.updatedAt,
-  };
-}
-
-function toCorrectiveAction(r: Row): CorrectiveAction {
-  return {
-    id:               r.id as string,
-    checklistItemId:  (r.checklist_item_id as string) ?? '',
-    sessionId:        (r.session_id   as string) ?? '',
-    clauseRef:        (r.clause_ref   as string) ?? '',
-    description:      (r.description  as string) ?? '',
-    rootCause:        (r.root_cause   as string) ?? '',
-    owner:            (r.owner        as string) ?? '',
-    dueDate:          (r.due_date     as string) ?? '',
-    status:           (r.status       as string) ?? 'Open',
-    closureNotes:     (r.closure_notes as string) ?? '',
-    createdAt:        (r.created_at   as string) ?? '',
-    updatedAt:        (r.updated_at   as string) ?? '',
-  } as CorrectiveAction;
-}
-
-function fromCorrectiveAction(ca: CorrectiveAction) {
-  return {
-    id: ca.id, checklist_item_id: ca.checklistItemId,
-    session_id: ca.sessionId, clause_ref: ca.clauseRef,
-    description: ca.description, root_cause: ca.rootCause,
-    owner: ca.owner, due_date: ca.dueDate, status: ca.status,
-    closure_notes: ca.closureNotes,
-    created_at: ca.createdAt, updated_at: ca.updatedAt,
-  };
+// Supabase errors are plain objects { message, code, details, hint }, not Error instances.
+// Wrapping them lets catch blocks use instanceof Error and e.message correctly.
+function pgErr(e: { message?: string; code?: string } | null): Error {
+  const msg = e?.message ?? 'Database error';
+  const code = e?.code ? ` (${e.code})` : '';
+  return new Error(`${msg}${code}`);
 }
 
 // ── Audit Plans ───────────────────────────────────────────────────────────────
@@ -129,10 +36,9 @@ function fromCorrectiveAction(ca: CorrectiveAction) {
 export async function getAuditPlans(): Promise<AuditPlan[]> {
   const { data, error } = await supabase
     .from('audit_plans')
-    .select('*')
-    .order('created_at');
-  if (error) throw error;
-  return (data ?? []).map(toAuditPlan);
+    .select('id, data');
+  if (error) throw pgErr(error);
+  return (data ?? []).map(r => fromRow<AuditPlan>(r as DataRow));
 }
 
 export const getSessions = getAuditPlans;
@@ -140,21 +46,21 @@ export const getSessions = getAuditPlans;
 export async function saveAuditPlan(plan: AuditPlan): Promise<void> {
   const { error } = await supabase
     .from('audit_plans')
-    .upsert(fromAuditPlan(plan));
-  if (error) throw error;
+    .upsert(toRow(plan));
+  if (error) throw pgErr(error);
 }
 
 export const saveSession = saveAuditPlan;
 
 export async function deleteAuditPlan(id: string): Promise<void> {
   const sessions = await getPlanSessions(id);
-  const allIds = [id, ...sessions.map(s => s.id)];
+  const sessionIds = [id, ...sessions.map(s => s.id)];
 
-  await supabase.from('corrective_actions').delete().in('session_id', allIds);
-  await supabase.from('checklist_items').delete().in('session_id', allIds);
+  await supabase.from('corrective_actions').delete().in('data->>sessionId', sessionIds);
+  await supabase.from('checklist_items').delete().in('data->>sessionId', sessionIds);
   await supabase.from('plan_sessions').delete().eq('plan_id', id);
   const { error } = await supabase.from('audit_plans').delete().eq('id', id);
-  if (error) throw error;
+  if (error) throw pgErr(error);
 }
 
 export const deleteSession = deleteAuditPlan;
@@ -162,18 +68,23 @@ export const deleteSession = deleteAuditPlan;
 // ── Plan Sessions ─────────────────────────────────────────────────────────────
 
 export async function getPlanSessions(planId?: string): Promise<PlanSession[]> {
-  let q = supabase.from('plan_sessions').select('*').order('day').order('time');
+  let q = supabase.from('plan_sessions').select('id, plan_id, data');
   if (planId) q = q.eq('plan_id', planId);
   const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []).map(toPlanSession);
+  if (error) throw pgErr(error);
+  return (data ?? []).map((r: PlanSessionRow) => ({
+    id: r.id,
+    planId: r.plan_id,
+    ...r.data,
+  } as PlanSession));
 }
 
 export async function savePlanSession(session: PlanSession): Promise<void> {
+  const { id, planId, ...rest } = session;
   const { error } = await supabase
     .from('plan_sessions')
-    .upsert(fromPlanSession(session));
-  if (error) throw error;
+    .upsert({ id, plan_id: planId, data: rest });
+  if (error) throw pgErr(error);
 }
 
 export async function deletePlanSession(id: string): Promise<void> {
@@ -181,7 +92,7 @@ export async function deletePlanSession(id: string): Promise<void> {
     .from('plan_sessions')
     .delete()
     .eq('id', id);
-  if (error) throw error;
+  if (error) throw pgErr(error);
 }
 
 // ── Checklist Items ───────────────────────────────────────────────────────────
@@ -189,41 +100,39 @@ export async function deletePlanSession(id: string): Promise<void> {
 export async function getChecklistItems(): Promise<ChecklistItem[]> {
   const { data, error } = await supabase
     .from('checklist_items')
-    .select('*')
-    .order('created_at');
-  if (error) throw error;
-  return (data ?? []).map(toChecklistItem);
+    .select('id, data');
+  if (error) throw pgErr(error);
+  return (data ?? []).map(r => fromRow<ChecklistItem>(r as DataRow));
 }
 
 export async function getChecklistBySession(sessionId: string): Promise<ChecklistItem[]> {
   const { data, error } = await supabase
     .from('checklist_items')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('created_at');
-  if (error) throw error;
-  return (data ?? []).map(toChecklistItem);
+    .select('id, data')
+    .eq('data->>sessionId', sessionId);
+  if (error) throw pgErr(error);
+  return (data ?? []).map(r => fromRow<ChecklistItem>(r as DataRow));
 }
 
 export async function saveChecklistItem(item: ChecklistItem): Promise<void> {
   const { error } = await supabase
     .from('checklist_items')
-    .upsert(fromChecklistItem(item));
-  if (error) throw error;
+    .upsert(toRow(item));
+  if (error) throw pgErr(error);
 }
 
 export async function bulkSaveChecklistItems(items: ChecklistItem[]): Promise<void> {
   if (items.length === 0) return;
   const { error } = await supabase
     .from('checklist_items')
-    .insert(items.map(fromChecklistItem));
-  if (error) throw error;
+    .insert(items.map(toRow));
+  if (error) throw pgErr(error);
 }
 
 export async function deleteChecklistItem(id: string): Promise<void> {
-  await supabase.from('corrective_actions').delete().eq('checklist_item_id', id);
+  await supabase.from('corrective_actions').delete().eq('data->>checklistItemId', id);
   const { error } = await supabase.from('checklist_items').delete().eq('id', id);
-  if (error) throw error;
+  if (error) throw pgErr(error);
 }
 
 // ── Corrective Actions ────────────────────────────────────────────────────────
@@ -231,27 +140,25 @@ export async function deleteChecklistItem(id: string): Promise<void> {
 export async function getCorrectiveActions(): Promise<CorrectiveAction[]> {
   const { data, error } = await supabase
     .from('corrective_actions')
-    .select('*')
-    .order('created_at');
-  if (error) throw error;
-  return (data ?? []).map(toCorrectiveAction);
+    .select('id, data');
+  if (error) throw pgErr(error);
+  return (data ?? []).map(r => fromRow<CorrectiveAction>(r as DataRow));
 }
 
 export async function getCorrectiveActionsBySession(sessionId: string): Promise<CorrectiveAction[]> {
   const { data, error } = await supabase
     .from('corrective_actions')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('created_at');
-  if (error) throw error;
-  return (data ?? []).map(toCorrectiveAction);
+    .select('id, data')
+    .eq('data->>sessionId', sessionId);
+  if (error) throw pgErr(error);
+  return (data ?? []).map(r => fromRow<CorrectiveAction>(r as DataRow));
 }
 
 export async function saveCorrectiveAction(ca: CorrectiveAction): Promise<void> {
   const { error } = await supabase
     .from('corrective_actions')
-    .upsert(fromCorrectiveAction(ca));
-  if (error) throw error;
+    .upsert(toRow(ca));
+  if (error) throw pgErr(error);
 }
 
 export async function deleteCorrectiveAction(id: string): Promise<void> {
@@ -259,7 +166,7 @@ export async function deleteCorrectiveAction(id: string): Promise<void> {
     .from('corrective_actions')
     .delete()
     .eq('id', id);
-  if (error) throw error;
+  if (error) throw pgErr(error);
 }
 
 // ── Checklist Templates ───────────────────────────────────────────────────────
@@ -267,22 +174,16 @@ export async function deleteCorrectiveAction(id: string): Promise<void> {
 export async function getChecklistTemplates(): Promise<ChecklistTemplate[]> {
   const { data, error } = await supabase
     .from('checklist_templates')
-    .select('*')
-    .order('created_at');
-  if (error) throw error;
-  return (data ?? []).map(r => ({
-    id:        r.id as string,
-    question:  (r.question  as string) ?? '',
-    clauseRef: (r.clause_ref as string) ?? '',
-    createdAt: (r.created_at as string) ?? '',
-  }));
+    .select('id, data');
+  if (error) throw pgErr(error);
+  return (data ?? []).map(r => fromRow<ChecklistTemplate>(r as DataRow));
 }
 
 export async function saveChecklistTemplate(t: ChecklistTemplate): Promise<void> {
   const { error } = await supabase
     .from('checklist_templates')
-    .upsert({ id: t.id, question: t.question, clause_ref: t.clauseRef, created_at: t.createdAt });
-  if (error) throw error;
+    .upsert(toRow(t));
+  if (error) throw pgErr(error);
 }
 
 export async function deleteChecklistTemplate(id: string): Promise<void> {
@@ -290,7 +191,7 @@ export async function deleteChecklistTemplate(id: string): Promise<void> {
     .from('checklist_templates')
     .delete()
     .eq('id', id);
-  if (error) throw error;
+  if (error) throw pgErr(error);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -308,5 +209,4 @@ export function computeSessionProgress(
   };
 }
 
-// Backward-compat alias (now requires loaded items as first arg)
 export const getSessionProgress = computeSessionProgress;

@@ -12,6 +12,7 @@ import {
 import type { AuditPlan, ChecklistItem, FindingStatus } from '@/lib/types';
 import StatusBadge, { FINDING_STATUSES, CA_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
+import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_COLORS: Record<FindingStatus, string> = {
   'Not Assessed': 'bg-slate-200',
@@ -32,6 +33,7 @@ const STATUS_TEXT: Record<FindingStatus, string> = {
 };
 
 export default function DashboardPage() {
+  const { canEdit } = useAuth();
   const [sessions, setSessions] = useState<AuditPlan[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [cas, setCas] = useState<CorrectiveAction[]>([]);
@@ -375,12 +377,14 @@ export default function DashboardPage() {
                         <StatusBadge status={ca.status} type="ca" size="sm" />
                       </td>
                       <td className="py-2">
-                        <button
-                          onClick={() => openEditCA(ca)}
-                          className="text-xs text-blue-600 hover:underline whitespace-nowrap"
-                        >
-                          Update
-                        </button>
+                        {canEdit && (
+                          <button
+                            onClick={() => openEditCA(ca)}
+                            className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+                          >
+                            Update
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

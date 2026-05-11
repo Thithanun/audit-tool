@@ -15,6 +15,7 @@ import {
 } from '@/lib/store';
 import { ALL_CLAUSES } from '@/lib/seed-data';
 import Modal from '@/components/Modal';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,13 @@ function isGeneralSession(s: PlanSession): boolean {
 interface CardProps {
   item: ChecklistItem;
   index: number;
+  canEdit: boolean;
   onUpdate: (updated: ChecklistItem) => void;
   onDelete: () => void;
   onSaveAsTemplate: () => void;
 }
 
-function ChecklistItemCard({ item, index, onUpdate, onDelete, onSaveAsTemplate }: CardProps) {
+function ChecklistItemCard({ item, index, canEdit, onUpdate, onDelete, onSaveAsTemplate }: CardProps) {
   const needsFinding = NEEDS_FINDING.has(item.status);
 
   function patch(fields: Partial<ChecklistItem>) {
@@ -92,41 +94,50 @@ function ChecklistItemCard({ item, index, onUpdate, onDelete, onSaveAsTemplate }
           {item.question?.trim() || item.clauseTitle}
         </p>
 
-        <select
-          className={`text-xs rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium flex-shrink-0 border-0 ${STATUS_BADGE[item.status]}`}
-          value={item.status}
-          onChange={e => patch({ status: e.target.value as FindingStatus })}
-        >
-          {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {canEdit ? (
+          <select
+            className={`text-xs rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium flex-shrink-0 border-0 ${STATUS_BADGE[item.status]}`}
+            value={item.status}
+            onChange={e => patch({ status: e.target.value as FindingStatus })}
+          >
+            {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        ) : (
+          <span className={`text-xs rounded px-2 py-1 font-medium flex-shrink-0 ${STATUS_BADGE[item.status]}`}>
+            {item.status}
+          </span>
+        )}
 
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button
-            onClick={onSaveAsTemplate}
-            title="Save as template"
-            className="text-slate-400 hover:text-amber-500 px-1.5 py-1 rounded hover:bg-amber-50 transition-colors text-sm"
-          >
-            ☆
-          </button>
-          <button
-            onClick={onDelete}
-            title="Delete item"
-            className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors"
-          >
-            ✕
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={onSaveAsTemplate}
+              title="Save as template"
+              className="text-slate-400 hover:text-amber-500 px-1.5 py-1 rounded hover:bg-amber-50 transition-colors text-sm"
+            >
+              ☆
+            </button>
+            <button
+              onClick={onDelete}
+              title="Delete item"
+              className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Body */}
       <div className="px-4 pb-4 space-y-2">
         <textarea
           key={`${item.id}-notes`}
-          className="w-full text-xs text-slate-600 border border-slate-200 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+          readOnly={!canEdit}
+          className="w-full text-xs text-slate-600 border border-slate-200 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none read-only:bg-slate-50 read-only:cursor-default"
           rows={2}
           placeholder="Findings / evidence / observation..."
           defaultValue={item.notes}
-          onBlur={e => { if (e.target.value !== item.notes) patch({ notes: e.target.value }); }}
+          onBlur={e => { if (canEdit && e.target.value !== item.notes) patch({ notes: e.target.value }); }}
         />
 
         {needsFinding && (
@@ -163,6 +174,7 @@ function ChecklistItemCard({ item, index, onUpdate, onDelete, onSaveAsTemplate }
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ChecklistPage() {
+  const { canEdit } = useAuth();
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);
@@ -465,12 +477,14 @@ export default function ChecklistPage() {
               {visibleItems.length} item{visibleItems.length !== 1 ? 's' : ''}
               {filterStatus ? ` · ${filterStatus}` : ''}
             </p>
-            <button
-              onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-            >
-              + Add Item
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                + Add Item
+              </button>
+            )}
           </div>
 
           {visibleItems.length === 0 ? (
@@ -478,7 +492,7 @@ export default function ChecklistPage() {
               <p className="text-slate-500 text-sm mb-3">
                 {filterStatus ? `No items with status "${filterStatus}".` : 'No checklist items yet.'}
               </p>
-              {!filterStatus && (
+              {!filterStatus && canEdit && (
                 <button
                   onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
                   className="text-blue-600 hover:underline text-sm"
@@ -494,6 +508,7 @@ export default function ChecklistPage() {
                   key={item.id}
                   item={item}
                   index={idx + 1}
+                  canEdit={canEdit}
                   onUpdate={handleUpdate}
                   onDelete={() => handleDelete(item.id)}
                   onSaveAsTemplate={() => handleSaveAsTemplate(item)}

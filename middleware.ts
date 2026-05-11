@@ -70,7 +70,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Route guards ───────────────────────────────────────────────────────────
-  if (!user && pathname !== '/login') {
+  // /auth/* handles token exchange and password setup — must stay public.
+  const isPublic = pathname === '/login' || pathname.startsWith('/auth/');
+
+  if (!user && !isPublic) {
     return redirectTo(request, '/login');
   }
 

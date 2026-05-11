@@ -16,7 +16,7 @@ export default function Navbar() {
     { href: '/dashboard',  label: 'Dashboard',  visible: true },
   ];
 
-  if (pathname === '/login') return null;
+  if (pathname === '/login' || pathname.startsWith('/auth/')) return null;
 
   return (
     <nav className="bg-white border-b border-slate-200 shadow-sm">

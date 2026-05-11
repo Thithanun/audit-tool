@@ -35,15 +35,6 @@ const GENERAL_KEYWORDS = [
   'opening', 'closing', 'wrap up', 'debrief',
 ];
 
-const STATUS_BORDER: Record<FindingStatus, string> = {
-  'Not Assessed': 'border-l-slate-300',
-  'Conformity':   'border-l-green-500',
-  'OBS':          'border-l-orange-400',
-  'OFI':          'border-l-blue-500',
-  'NC-Minor':     'border-l-orange-600',
-  'NC-Major':     'border-l-red-500',
-};
-
 const STATUS_BADGE: Record<FindingStatus, string> = {
   'Not Assessed': 'bg-slate-100 text-slate-500',
   'Conformity':   'bg-green-100 text-green-700',
@@ -53,6 +44,15 @@ const STATUS_BADGE: Record<FindingStatus, string> = {
   'NC-Major':     'bg-red-100 text-red-700',
 };
 
+const STATUS_ROW: Record<FindingStatus, string> = {
+  'Not Assessed': '',
+  'Conformity':   '',
+  'OBS':          'bg-orange-50',
+  'OFI':          'bg-blue-50',
+  'NC-Minor':     'bg-orange-50',
+  'NC-Major':     'bg-red-50',
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isGeneralSession(s: PlanSession): boolean {
@@ -60,114 +60,130 @@ function isGeneralSession(s: PlanSession): boolean {
   return GENERAL_KEYWORDS.some(kw => area.includes(kw));
 }
 
-// ── ChecklistItemCard ─────────────────────────────────────────────────────────
+// ── EditModal ─────────────────────────────────────────────────────────────────
 
-interface CardProps {
-  item: ChecklistItem;
-  index: number;
+interface EditModalProps {
+  item: ChecklistItem | null;
   canEdit: boolean;
-  onUpdate: (updated: ChecklistItem) => void;
-  onDelete: () => void;
-  onSaveAsTemplate: () => void;
+  onClose: () => void;
+  onSave: (updated: ChecklistItem) => void;
+  onSaveAsTemplate: (item: ChecklistItem) => void;
 }
 
-function ChecklistItemCard({ item, index, canEdit, onUpdate, onDelete, onSaveAsTemplate }: CardProps) {
-  const needsFinding = NEEDS_FINDING.has(item.status);
+function EditModal({ item, canEdit, onClose, onSave, onSaveAsTemplate }: EditModalProps) {
+  const [draft, setDraft] = useState<ChecklistItem | null>(null);
+
+  useEffect(() => { setDraft(item ? { ...item } : null); }, [item]);
+
+  if (!draft) return null;
+
+  const needsFinding = NEEDS_FINDING.has(draft.status);
 
   function patch(fields: Partial<ChecklistItem>) {
-    onUpdate({ ...item, ...fields, updatedAt: new Date().toISOString() });
+    setDraft(d => d ? { ...d, ...fields } : d);
+  }
+
+  function handleSave() {
+    if (!draft) return;
+    onSave({ ...draft, updatedAt: new Date().toISOString() });
+    onClose();
   }
 
   return (
-    <div className={`bg-white rounded-lg border border-slate-200 border-l-4 ${STATUS_BORDER[item.status]} shadow-sm`}>
-      {/* Top row */}
-      <div className="flex items-start gap-3 p-4">
-        <span className="text-xs font-mono text-slate-400 w-6 flex-shrink-0 pt-0.5 select-none">
-          #{index}
-        </span>
+    <Modal open={!!item} onClose={onClose} title={`${draft.clauseRef} — ${draft.clauseTitle}`} size="lg">
+      <div className="space-y-4">
+        {/* Clause info */}
+        <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 leading-relaxed">
+          {draft.question?.trim() || draft.requirement}
+        </div>
 
-        <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded flex-shrink-0">
-          {item.clauseRef}
-        </span>
-
-        <p className="text-sm text-slate-800 flex-1 min-w-0 leading-snug">
-          {item.question?.trim() || item.clauseTitle}
-        </p>
-
-        {canEdit ? (
-          <select
-            className={`text-xs rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium flex-shrink-0 border-0 ${STATUS_BADGE[item.status]}`}
-            value={item.status}
-            onChange={e => patch({ status: e.target.value as FindingStatus })}
-          >
-            {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        ) : (
-          <span className={`text-xs rounded px-2 py-1 font-medium flex-shrink-0 ${STATUS_BADGE[item.status]}`}>
-            {item.status}
-          </span>
-        )}
-
-        {canEdit && (
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            <button
-              onClick={onSaveAsTemplate}
-              title="Save as template"
-              className="text-slate-400 hover:text-amber-500 px-1.5 py-1 rounded hover:bg-amber-50 transition-colors text-sm"
+        {/* Status */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+          {canEdit ? (
+            <select
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={draft.status}
+              onChange={e => patch({ status: e.target.value as FindingStatus })}
             >
-              ☆
-            </button>
-            <button
-              onClick={onDelete}
-              title="Delete item"
-              className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-      </div>
+              {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <span className={`inline-block text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_BADGE[draft.status]}`}>
+              {draft.status}
+            </span>
+          )}
+        </div>
 
-      {/* Body */}
-      <div className="px-4 pb-4 space-y-2">
-        <textarea
-          key={`${item.id}-notes`}
-          readOnly={!canEdit}
-          className="w-full text-xs text-slate-600 border border-slate-200 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none read-only:bg-slate-50 read-only:cursor-default"
-          rows={2}
-          placeholder="Findings / evidence / observation..."
-          defaultValue={item.notes}
-          onBlur={e => { if (canEdit && e.target.value !== item.notes) patch({ notes: e.target.value }); }}
-        />
+        {/* Remark / Notes */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Remark / Notes</label>
+          <textarea
+            readOnly={!canEdit}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none read-only:bg-slate-50 read-only:cursor-default"
+            rows={3}
+            placeholder="Findings / evidence / observation..."
+            value={draft.notes}
+            onChange={e => patch({ notes: e.target.value })}
+          />
+        </div>
 
+        {/* Finding details — only when status requires */}
         {needsFinding && (
-          <div className="border border-orange-200 rounded-lg p-3 bg-orange-50 space-y-2">
+          <div className="border border-orange-200 rounded-lg p-3 bg-orange-50 space-y-3">
             <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Finding Details</p>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Recommendation</label>
+              <label className="block text-xs text-slate-600 mb-1">Recommendation</label>
               <textarea
-                key={`${item.id}-rec`}
-                className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                readOnly={!canEdit}
+                className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none read-only:bg-slate-50"
                 rows={2}
                 placeholder="Enter recommendation..."
-                defaultValue={item.recommendation ?? ''}
-                onBlur={e => { if (e.target.value !== (item.recommendation ?? '')) patch({ recommendation: e.target.value }); }}
+                value={draft.recommendation ?? ''}
+                onChange={e => patch({ recommendation: e.target.value })}
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Due Date</label>
+              <label className="block text-xs text-slate-600 mb-1">Due Date</label>
               <input
-                key={`${item.id}-due`}
                 type="date"
-                className="text-xs border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
-                defaultValue={item.dueDate ?? ''}
-                onBlur={e => { if (e.target.value !== (item.dueDate ?? '')) patch({ dueDate: e.target.value }); }}
+                readOnly={!canEdit}
+                className="text-xs border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 read-only:bg-slate-50"
+                value={draft.dueDate ?? ''}
+                onChange={e => patch({ dueDate: e.target.value })}
               />
             </div>
           </div>
         )}
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-1">
+          {canEdit && (
+            <button
+              onClick={() => { onSaveAsTemplate(draft); }}
+              className="text-xs text-amber-600 hover:text-amber-800 border border-amber-300 hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              ☆ Save as template
+            </button>
+          )}
+          <div className="flex-1" />
+          <button
+            onClick={onClose}
+            className="border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors"
+          >
+            {canEdit ? 'Cancel' : 'Close'}
+          </button>
+          {canEdit && (
+            <button
+              onClick={handleSave}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Save
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -175,6 +191,7 @@ function ChecklistItemCard({ item, index, canEdit, onUpdate, onDelete, onSaveAsT
 
 export default function ChecklistPage() {
   const { canEditChecklist: canEdit } = useAuth();
+
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [planSessions, setPlanSessions] = useState<PlanSession[]>([]);
   const [items, setItems] = useState<ChecklistItem[]>([]);
@@ -183,6 +200,8 @@ export default function ChecklistPage() {
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [filterStatus, setFilterStatus] = useState<'' | FindingStatus>('');
+
+  const [editItem, setEditItem] = useState<ChecklistItem | null>(null);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addTab, setAddTab] = useState<'new' | 'template'>('new');
@@ -195,7 +214,7 @@ export default function ChecklistPage() {
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
 
-  // ── Load ────────────────────────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────────────────
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -226,7 +245,7 @@ export default function ChecklistPage() {
     }
   }, [plans, selectedPlanId]);
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
 
   const auditSessions = useMemo(
     () => planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0),
@@ -269,7 +288,7 @@ export default function ChecklistPage() {
     [selectedSession],
   );
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   function handleUpdate(updated: ChecklistItem) {
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
@@ -349,7 +368,7 @@ export default function ChecklistPage() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -366,11 +385,25 @@ export default function ChecklistPage() {
   );
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-28">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28">
+
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Checklist</h1>
-        <p className="text-slate-500 text-sm mt-1">Record findings item by item</p>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Checklist</h1>
+          <p className="text-slate-500 text-sm mt-1">Record findings item by item</p>
+        </div>
+        {canEdit && (
+          <button
+            onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Item
+          </button>
+        )}
       </div>
 
       {/* Filter bar */}
@@ -423,6 +456,7 @@ export default function ChecklistPage() {
           </div>
         </div>
 
+        {/* Status chips */}
         {selectedPlanId && (
           <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
             {FINDING_STATUSES.map(s => (
@@ -438,7 +472,7 @@ export default function ChecklistPage() {
         )}
       </div>
 
-      {/* Session info card */}
+      {/* Session info */}
       {selectedSession && (
         <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
           <div className="flex items-start justify-between mb-2">
@@ -465,81 +499,161 @@ export default function ChecklistPage() {
         </div>
       )}
 
-      {/* Content */}
+      {/* Main content */}
       {plans.length === 0 ? (
         <div className="text-center py-16 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
           <p className="text-slate-500 text-sm">Create an audit plan first to use the checklist.</p>
         </div>
+      ) : visibleItems.length === 0 ? (
+        <div className="text-center py-16 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+          <p className="text-slate-500 text-sm mb-3">
+            {filterStatus ? `No items with status "${filterStatus}".` : 'No checklist items yet.'}
+          </p>
+          {!filterStatus && canEdit && (
+            <button
+              onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
+              className="text-blue-600 hover:underline text-sm"
+            >
+              Add the first item →
+            </button>
+          )}
+        </div>
       ) : (
-        <>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-slate-500">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* item count */}
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+            <p className="text-xs text-slate-500">
               {visibleItems.length} item{visibleItems.length !== 1 ? 's' : ''}
-              {filterStatus ? ` · ${filterStatus}` : ''}
+              {filterStatus ? ` · filtered by "${filterStatus}"` : ''}
             </p>
-            {canEdit && (
-              <button
-                onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-              >
-                + Add Item
-              </button>
-            )}
           </div>
 
-          {visibleItems.length === 0 ? (
-            <div className="text-center py-16 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-              <p className="text-slate-500 text-sm mb-3">
-                {filterStatus ? `No items with status "${filterStatus}".` : 'No checklist items yet.'}
-              </p>
-              {!filterStatus && canEdit && (
-                <button
-                  onClick={() => { setAddTab('new'); setAddModalOpen(true); }}
-                  className="text-blue-600 hover:underline text-sm"
-                >
-                  Add the first item →
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {visibleItems.map((item, idx) => (
-                <ChecklistItemCard
-                  key={item.id}
-                  item={item}
-                  index={idx + 1}
-                  canEdit={canEdit}
-                  onUpdate={handleUpdate}
-                  onDelete={() => handleDelete(item.id)}
-                  onSaveAsTemplate={() => handleSaveAsTemplate(item)}
-                />
-              ))}
-            </div>
-          )}
-        </>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                  <th className="text-xs font-semibold text-slate-500 px-4 py-3 w-10">#</th>
+                  <th className="text-xs font-semibold text-slate-500 px-4 py-3 w-28">ข้อกำหนด</th>
+                  <th className="text-xs font-semibold text-slate-500 px-4 py-3">Checklist</th>
+                  <th className="text-xs font-semibold text-slate-500 px-4 py-3 w-36">Status</th>
+                  <th className="text-xs font-semibold text-slate-500 px-4 py-3 w-64">Remark</th>
+                  {canEdit && (
+                    <th className="text-xs font-semibold text-slate-500 px-4 py-3 w-24 text-center">Actions</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleItems.map((item, idx) => (
+                  <tr
+                    key={item.id}
+                    className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${STATUS_ROW[item.status]}`}
+                  >
+                    {/* # */}
+                    <td className="px-4 py-3 text-xs text-slate-400 font-mono align-top">
+                      {idx + 1}
+                    </td>
+
+                    {/* ข้อกำหนด (clause) */}
+                    <td className="px-4 py-3 align-top">
+                      <span className="inline-block text-xs font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded whitespace-nowrap">
+                        {item.clauseRef}
+                      </span>
+                      <p className="text-xs text-slate-400 mt-1 leading-snug">{item.clauseTitle}</p>
+                    </td>
+
+                    {/* Checklist (คำถาม) */}
+                    <td className="px-4 py-3 align-top">
+                      <p className="text-sm text-slate-800 leading-snug">
+                        {item.question?.trim() || item.requirement}
+                      </p>
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3 align-top">
+                      {canEdit ? (
+                        <select
+                          className={`text-xs rounded-full px-2.5 py-1 font-medium border-0 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${STATUS_BADGE[item.status]}`}
+                          value={item.status}
+                          onChange={e => handleUpdate({
+                            ...item,
+                            status: e.target.value as FindingStatus,
+                            updatedAt: new Date().toISOString(),
+                          })}
+                        >
+                          {FINDING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`inline-block text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_BADGE[item.status]}`}>
+                          {item.status}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Remark */}
+                    <td className="px-4 py-3 align-top">
+                      {canEdit ? (
+                        <textarea
+                          key={`${item.id}-notes`}
+                          className="w-full text-xs text-slate-600 border border-slate-200 rounded px-2 py-1.5 bg-transparent focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none hover:border-slate-300 transition-colors"
+                          rows={2}
+                          placeholder="บันทึก / หลักฐาน..."
+                          defaultValue={item.notes}
+                          onBlur={e => {
+                            if (e.target.value !== item.notes)
+                              handleUpdate({ ...item, notes: e.target.value, updatedAt: new Date().toISOString() });
+                          }}
+                        />
+                      ) : (
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          {item.notes || <span className="text-slate-300 italic">—</span>}
+                        </p>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    {canEdit && (
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => setEditItem(item)}
+                            title="Edit"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            title="Delete"
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
-      {/* Fixed bottom bar */}
+      {/* Fixed bottom summary bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 flex items-center gap-4 z-40 print:hidden">
         <div className="flex items-center gap-4 text-xs text-slate-600 flex-1 flex-wrap">
-          <span>
-            <span className="font-semibold text-slate-900">{sessionItems.length}</span> items
-          </span>
-          <span>
-            <span className="font-semibold text-slate-900">{assessed}</span> assessed
-          </span>
-          {statusCounts['NC-Major'] > 0 && (
-            <span className="font-medium text-red-600">NC-Major: {statusCounts['NC-Major']}</span>
-          )}
-          {statusCounts['NC-Minor'] > 0 && (
-            <span className="font-medium text-orange-700">NC-Minor: {statusCounts['NC-Minor']}</span>
-          )}
-          {statusCounts['OBS'] > 0 && (
-            <span className="font-medium text-orange-600">OBS: {statusCounts['OBS']}</span>
-          )}
-          {statusCounts['OFI'] > 0 && (
-            <span className="font-medium text-blue-600">OFI: {statusCounts['OFI']}</span>
-          )}
+          <span><span className="font-semibold text-slate-900">{sessionItems.length}</span> items</span>
+          <span><span className="font-semibold text-slate-900">{assessed}</span> assessed</span>
+          {statusCounts['NC-Major'] > 0 && <span className="font-medium text-red-600">NC-Major: {statusCounts['NC-Major']}</span>}
+          {statusCounts['NC-Minor'] > 0 && <span className="font-medium text-orange-700">NC-Minor: {statusCounts['NC-Minor']}</span>}
+          {statusCounts['OBS'] > 0 && <span className="font-medium text-orange-600">OBS: {statusCounts['OBS']}</span>}
+          {statusCounts['OFI'] > 0 && <span className="font-medium text-blue-600">OFI: {statusCounts['OFI']}</span>}
         </div>
         <button
           onClick={() => window.print()}
@@ -549,13 +663,17 @@ export default function ChecklistPage() {
         </button>
       </div>
 
+      {/* Edit Modal */}
+      <EditModal
+        item={editItem}
+        canEdit={canEdit}
+        onClose={() => setEditItem(null)}
+        onSave={handleUpdate}
+        onSaveAsTemplate={item => { handleSaveAsTemplate(item); }}
+      />
+
       {/* Add Item Modal */}
-      <Modal
-        open={addModalOpen}
-        onClose={() => setAddModalOpen(false)}
-        title="Add Checklist Item"
-        size="lg"
-      >
+      <Modal open={addModalOpen} onClose={() => setAddModalOpen(false)} title="Add Checklist Item" size="lg">
         <div className="flex border-b border-slate-200 mb-4 -mt-2">
           {(['new', 'template'] as const).map(tab => (
             <button
@@ -616,17 +734,12 @@ export default function ChecklistPage() {
               </select>
             </div>
             <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setAddModalOpen(false)}
-                className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors"
-              >
+              <button type="button" onClick={() => setAddModalOpen(false)}
+                className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
                 Cancel
               </button>
-              <button
-                type="submit"
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors"
-              >
+              <button type="submit"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">
                 Add Item
               </button>
             </div>
@@ -635,24 +748,19 @@ export default function ChecklistPage() {
           <div>
             {templates.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-10">
-                No templates yet. Use the ☆ button on any item to save it as a template.
+                No templates yet. Open an item and use &quot;Save as template&quot;.
               </p>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {templates.map(t => (
-                  <div
-                    key={t.id}
-                    className="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
-                  >
+                  <div key={t.id} className="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-mono text-slate-500">{t.clauseRef}</p>
                       <p className="text-sm text-slate-800 mt-0.5 leading-snug">{t.question}</p>
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleAddFromTemplate(t)}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100 transition-colors"
-                      >
+                      <button onClick={() => handleAddFromTemplate(t)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100 transition-colors">
                         Use
                       </button>
                       <button
@@ -660,8 +768,7 @@ export default function ChecklistPage() {
                           setTemplates(prev => prev.filter(x => x.id !== t.id));
                           deleteChecklistTemplate(t.id).catch(e => console.error('Delete template failed:', e));
                         }}
-                        className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors"
-                      >
+                        className="text-xs text-slate-400 hover:text-red-600 px-1.5 py-1 rounded hover:bg-red-50 transition-colors">
                         ✕
                       </button>
                     </div>

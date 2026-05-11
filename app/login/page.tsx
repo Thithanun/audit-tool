@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
@@ -10,6 +10,8 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get('error');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +48,12 @@ export default function LoginPage() {
 
         <h1 className="text-xl font-semibold text-slate-900 mb-1">Sign in</h1>
         <p className="text-sm text-slate-500 mb-6">Enter your credentials to continue</p>
+
+        {urlError === 'invalid_token' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 mb-4">
+            The invitation link has expired or is invalid. Please ask your admin to send a new invite.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

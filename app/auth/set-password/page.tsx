@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -12,10 +12,31 @@ import { supabase } from '@/lib/supabase';
  */
 export default function SetPasswordPage() {
   const router = useRouter();
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [error, setError]       = useState<string | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [password, setPassword]   = useState('');
+  const [confirm, setConfirm]     = useState('');
+  const [error, setError]         = useState<string | null>(null);
+  const [loading, setLoading]     = useState(false);
+  const [checking, setChecking]   = useState(true);
+
+  // Guard: if there's no active session the token exchange failed or the page
+  // was accessed directly — redirect to login with a helpful error.
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) {
+        router.replace('/login?error=invalid_token');
+      } else {
+        setChecking(false);
+      }
+    });
+  }, [router]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

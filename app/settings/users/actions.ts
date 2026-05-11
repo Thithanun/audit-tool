@@ -54,8 +54,12 @@ export async function inviteUser(
   try {
     await assertAdmin();
     const admin = await getAdminClient();
+    // NEXT_PUBLIC_SITE_URL must be set in Vercel env vars.
+    // Falls back to no redirectTo so Supabase uses the dashboard Site URL.
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
       data: { name, role },
+      ...(siteUrl ? { redirectTo: `${siteUrl}/auth/confirm` } : {}),
     });
     if (error) throw new Error(error.message);
     return { error: null };

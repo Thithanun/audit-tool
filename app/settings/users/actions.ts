@@ -52,6 +52,23 @@ export async function updateUserRole(userId: string, role: string): Promise<void
 export async function removeUser(userId: string): Promise<void> {
   await assertAdmin();
   const admin = await getAdminClient();
-  const { error } = await admin.auth.admin.deleteUser(userId);
-  if (error) throw new Error(error.message);
+
+  // Delete profile row first — avoids FK constraint errors when the
+  // profiles table was created without ON DELETE CASCADE, or when the
+  // cascade hasn't been applied yet.
+  const { error: profileErr } = await admin
+    .from('profiles')
+    .delete()
+    .eq('id', userId);
+  if (profileErr) {
+    console.error('[removeUser] profiles delete error:', profileErr.code, profileErr.message);
+    // Non-fatal: profile row may already be gone; continue to auth deletion.
+  }
+
+  // Delete the auth user (requires service role key).
+  const { error: authErr } = await admin.auth.admin.deleteUser(userId);
+  if (authErr) {
+    console.error('[removeUser] auth.admin.deleteUser error:', authErr.message);
+    throw new Error(authErr.message);
+  }
 }

@@ -51,11 +51,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('id, email, full_name, role')
       .eq('id', userId)
       .single();
+    if (error) {
+      // PGRST116 = no row found; anything else is unexpected
+      if (error.code !== 'PGRST116') {
+        console.error('[AuthContext] fetchProfile error:', error.code, error.message);
+      } else {
+        console.warn('[AuthContext] No profiles row for user', userId,
+          '— run supabase/auth-schema.sql and ensure the trigger fired.');
+      }
+    }
     setProfile(data as UserProfile | null);
   }, []);
 
@@ -95,7 +104,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canEditAuditPlan = role === 'admin';
   const canEditChecklist = role === 'admin' || role === 'auditor';
   const canEditDashboard = role === 'admin' || role === 'auditor';
-  const canSeeChecklist  = role === 'admin' || role === 'auditor';
+  // Fail-open: hide Checklist ONLY when we are certain the role is 'viewer'.
+  // While profile is still loading (role === null) we show the tab so admin/
+  // auditor users never see it flicker away and back.
+  const canSeeChecklist  = role !== 'viewer';
 
   return (
     <AuthContext.Provider value={{

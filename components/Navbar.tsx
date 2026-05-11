@@ -6,11 +6,13 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { profile, isAdmin, canSeeChecklist, signOut } = useAuth();
+  const { profile, loading, isAdmin, canSeeChecklist, signOut } = useAuth();
 
+  // While auth is resolving, show all tabs (fail-open) so they never flicker
+  // away for non-viewers.  For viewers the tab disappears once loading finishes.
   const NAV_LINKS = [
     { href: '/audit-plan', label: 'Audit Plan', visible: true },
-    { href: '/checklist',  label: 'Checklist',  visible: canSeeChecklist },
+    { href: '/checklist',  label: 'Checklist',  visible: loading || canSeeChecklist },
     { href: '/dashboard',  label: 'Dashboard',  visible: true },
   ];
 

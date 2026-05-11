@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import type { AuditPlan, ChecklistItem, PlanSession, StandardUsed, SessionStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus } from '@/lib/types';
 import {
   getAuditPlans,
   saveAuditPlan,
@@ -22,15 +22,6 @@ import { useAuth } from '@/contexts/AuthContext';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const STANDARD_OPTIONS: { value: StandardUsed; label: string }[] = [
-  { value: 'ISO27001', label: 'ISO 27001:2022' },
-  { value: 'NIST_CSF', label: 'NIST CSF 2.0' },
-  { value: 'BOTH',     label: 'ISO 27001:2022 + NIST CSF 2.0' },
-];
-
-function standardLabel(s: StandardUsed) {
-  return STANDARD_OPTIONS.find(o => o.value === s)?.label ?? s;
-}
 
 function fmtDate(dateStr: string): string {
   if (!dateStr) return '—';
@@ -286,7 +277,7 @@ export default function PlanDetailPage() {
 
         <div className="flex flex-wrap gap-2 mb-5">
           <span className="text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
-            {standardLabel(plan.standard)}
+            {plan.standard}
           </span>
         </div>
 
@@ -425,10 +416,13 @@ export default function PlanDetailPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">มาตรฐานที่ใช้ (Standard Used)</label>
-              <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={planForm.standard} disabled>
-                {STANDARD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <input
+                type="text"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., ISO 27001:2022"
+                value={planForm.standard}
+                onChange={e => setPlanForm(f => f ? { ...f, standard: e.target.value } : f)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">ขอบเขตที่ตรวจประเมิน (Scope of Audit)</label>

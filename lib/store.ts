@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession,
+  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, Standard,
 } from './types';
 
 export function uid(): string {
@@ -191,6 +191,32 @@ export async function deleteChecklistTemplate(id: string): Promise<void> {
     .from('checklist_templates')
     .delete()
     .eq('id', id);
+  if (error) throw pgErr(error);
+}
+
+// ── Standards ─────────────────────────────────────────────────────────────────
+// standards table uses native columns (not JSONB) — query fields directly.
+
+export async function getStandards(activeOnly = false): Promise<Standard[]> {
+  let q = supabase.from('standards').select('*').order('name');
+  if (activeOnly) q = q.eq('is_active', true);
+  const { data, error } = await q;
+  if (error) throw pgErr(error);
+  return (data ?? []) as Standard[];
+}
+
+export async function saveStandard(s: Omit<Standard, 'created_at'> | Omit<Standard, 'id' | 'created_at'>): Promise<Standard> {
+  const { data, error } = await supabase
+    .from('standards')
+    .upsert(s)
+    .select()
+    .single();
+  if (error) throw pgErr(error);
+  return data as Standard;
+}
+
+export async function deleteStandard(id: string): Promise<void> {
+  const { error } = await supabase.from('standards').delete().eq('id', id);
   if (error) throw pgErr(error);
 }
 

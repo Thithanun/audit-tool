@@ -56,16 +56,28 @@ export default function Navbar() {
             })}
 
             {isAdmin && (
-              <Link
-                href="/settings/users"
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  pathname.startsWith('/settings')
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                Users
-              </Link>
+              <>
+                <Link
+                  href="/settings/users"
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    pathname.startsWith('/settings/users')
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  Users
+                </Link>
+                <Link
+                  href="/settings/standards"
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    pathname.startsWith('/settings/standards')
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  Standards
+                </Link>
+              </>
             )}
           </div>
 

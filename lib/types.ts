@@ -1,6 +1,15 @@
 export type Framework = 'ISO27001' | 'NIST_CSF';
 
-export type StandardUsed = 'ISO27001' | 'NIST_CSF' | 'BOTH';
+/** UUID of a row in the `standards` table (or legacy string for old plans). */
+export type StandardUsed = string;
+
+export interface Standard {
+  id: string;
+  name: string;
+  version: string | null;
+  is_active: boolean;
+  created_at: string;
+}
 
 export type FindingStatus =
   | 'Not Assessed'

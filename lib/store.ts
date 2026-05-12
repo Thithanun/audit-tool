@@ -36,7 +36,7 @@ function pgErr(e: { message?: string; code?: string } | null): Error {
 // If the network is down or the DB is unresponsive the caller receives a clear
 // error instead of hanging the loading spinner indefinitely.
 
-const QUERY_TIMEOUT_MS = 10_000;
+const QUERY_TIMEOUT_MS = 30_000;
 
 function withTimeout<T>(query: PromiseLike<T>): Promise<T> {
   return Promise.race([

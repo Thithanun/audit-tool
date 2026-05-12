@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // login redirect without an infinite spinner.
     const authTimeout = setTimeout(() => {
       setLoading(false);
-    }, 10_000);
+    }, 30_000);
 
     // onAuthStateChange fires INITIAL_SESSION immediately on setup,
     // so we don't need a separate getUser() call (which would make an extra

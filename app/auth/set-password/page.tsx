@@ -7,13 +7,13 @@ import { clearMustChangePassword } from './actions';
 
 export default function SetPasswordPage() {
   const router = useRouter();
-  const [password, setPassword]   = useState('');
-  const [confirm, setConfirm]     = useState('');
-  const [error, setError]         = useState<string | null>(null);
-  const [loading, setLoading]     = useState(false);
-  const [checking, setChecking]   = useState(true);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm]   = useState('');
+  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading]   = useState(false);
+  const [checking, setChecking] = useState(true);
 
-  // Redirect to login if there's no active session
+  // Redirect to login if there is no active session
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) {
@@ -47,25 +47,38 @@ export default function SetPasswordPage() {
 
     setLoading(true);
 
-    // 1. Update the password in Supabase Auth
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    if (updateError) {
-      setError(updateError.message);
-      setLoading(false);
-      return;
-    }
+    try {
+      // ── Step 1: Clear the flag FIRST ───────────────────────────────────────
+      // Must happen before updateUser() because updateUser fires USER_UPDATED
+      // which triggers AuthContext → fetchProfile → redirect back here if the
+      // flag is still true (race condition that causes the "Saving…" hang).
+      const { error: flagError } = await clearMustChangePassword();
+      if (flagError) {
+        setError('ไม่สามารถอัปเดตข้อมูลได้: ' + flagError);
+        setLoading(false);
+        return;
+      }
 
-    // 2. Clear the must_change_password flag via server action (uses service role)
-    const { error: flagError } = await clearMustChangePassword();
-    if (flagError) {
-      setError('Password updated but could not clear flag: ' + flagError);
-      setLoading(false);
-      return;
-    }
+      // ── Step 2: Update the password ────────────────────────────────────────
+      // onAuthStateChange fires after this — AuthContext re-fetches profile
+      // and now sees must_change_password = false → no redirect back here.
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) {
+        setError(updateError.message);
+        setLoading(false);
+        return;
+      }
 
-    // 3. Go to the app — AuthContext will re-fetch profile and see flag = false
-    router.push('/');
-    router.refresh();
+      // ── Step 3: Navigate to the app ────────────────────────────────────────
+      router.push('/');
+      router.refresh();
+
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[set-password] unexpected error:', msg);
+      setError('เกิดข้อผิดพลาด: ' + msg);
+      setLoading(false);
+    }
   }
 
   return (
@@ -83,15 +96,15 @@ export default function SetPasswordPage() {
           </div>
         </div>
 
-        <h1 className="text-xl font-semibold text-slate-900 mb-1">Set your password</h1>
+        <h1 className="text-xl font-semibold text-slate-900 mb-1">ตั้งรหัสผ่านใหม่</h1>
         <p className="text-sm text-slate-500 mb-6">
-          You must set a new password before continuing.
+          กรุณาตั้งรหัสผ่านใหม่ก่อนเข้าใช้งานระบบ
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              New password <span className="text-red-500">*</span>
+              รหัสผ่านใหม่ <span className="text-red-500">*</span>
             </label>
             <input
               type="password"
@@ -100,14 +113,14 @@ export default function SetPasswordPage() {
               minLength={8}
               value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder="Minimum 8 characters"
+              placeholder="อย่างน้อย 8 ตัวอักษร"
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Confirm password <span className="text-red-500">*</span>
+              ยืนยันรหัสผ่าน <span className="text-red-500">*</span>
             </label>
             <input
               type="password"
@@ -115,15 +128,16 @@ export default function SetPasswordPage() {
               autoComplete="new-password"
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
-              placeholder="Repeat your password"
+              placeholder="พิมพ์รหัสผ่านอีกครั้ง"
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {error}
-            </p>
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <p className="font-medium mb-0.5">เกิดข้อผิดพลาด</p>
+              <p>{error}</p>
+            </div>
           )}
 
           <button
@@ -131,7 +145,7 @@ export default function SetPasswordPage() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            {loading ? 'Saving…' : 'Set password & continue'}
+            {loading ? 'กำลังบันทึก…' : 'ตั้งรหัสผ่านและเข้าใช้งาน'}
           </button>
         </form>
       </div>

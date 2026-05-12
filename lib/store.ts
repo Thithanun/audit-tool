@@ -31,6 +31,25 @@ function pgErr(e: { message?: string; code?: string } | null): Error {
   return new Error(`${msg}${code}`);
 }
 
+// ── Query timeout ─────────────────────────────────────────────────────────────
+// Every Supabase call is raced against a 10-second deadline.
+// If the network is down or the DB is unresponsive the caller receives a clear
+// error instead of hanging the loading spinner indefinitely.
+
+const QUERY_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(query: PromiseLike<T>): Promise<T> {
+  return Promise.race([
+    Promise.resolve(query),
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('การเชื่อมต่อหมดเวลา (10s) — กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')),
+        QUERY_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+}
+
 // ── Module-level query cache ───────────────────────────────────────────────────
 // Next.js App Router preserves page state within a session, but every page
 // component re-mounts on navigation (page.tsx is not a shared layout).
@@ -64,9 +83,9 @@ export async function getAuditPlans(): Promise<AuditPlan[]> {
   const cached = hit(qc.auditPlans);
   if (cached) return cached;
 
-  const { data, error } = await supabase
-    .from('audit_plans')
-    .select('id, data');
+  const { data, error } = await withTimeout(
+    supabase.from('audit_plans').select('id, data'),
+  );
   if (error) throw pgErr(error);
   const result = (data ?? []).map(r => fromRow<AuditPlan>(r as DataRow));
   qc.auditPlans = { data: result, at: Date.now() };
@@ -80,11 +99,9 @@ export async function getAuditPlanById(id: string): Promise<AuditPlan | null> {
   const listCached = hit(qc.auditPlans);
   if (listCached) return listCached.find(p => p.id === id) ?? null;
 
-  const { data, error } = await supabase
-    .from('audit_plans')
-    .select('id, data')
-    .eq('id', id)
-    .single();
+  const { data, error } = await withTimeout(
+    supabase.from('audit_plans').select('id, data').eq('id', id).single(),
+  );
   if (error) {
     if (error.code === 'PGRST116') return null; // not found
     throw pgErr(error);
@@ -132,7 +149,7 @@ function sessionStartMinutes(time: string | undefined): number {
 export async function getPlanSessions(planId?: string): Promise<PlanSession[]> {
   let q = supabase.from('plan_sessions').select('id, plan_id, data');
   if (planId) q = q.eq('plan_id', planId);
-  const { data, error } = await q;
+  const { data, error } = await withTimeout(q);
   if (error) throw pgErr(error);
   const sessions = (data ?? []).map((r: PlanSessionRow) => ({
     id: r.id,
@@ -181,9 +198,9 @@ export async function getChecklistItems(): Promise<ChecklistItem[]> {
   const cached = hit(qc.checklistItems);
   if (cached) return cached;
 
-  const { data, error } = await supabase
-    .from('checklist_items')
-    .select('id, data');
+  const { data, error } = await withTimeout(
+    supabase.from('checklist_items').select('id, data'),
+  );
   if (error) throw pgErr(error);
   const result = (data ?? []).map(r => fromRow<ChecklistItem>(r as DataRow));
   qc.checklistItems = { data: result, at: Date.now() };
@@ -191,10 +208,9 @@ export async function getChecklistItems(): Promise<ChecklistItem[]> {
 }
 
 export async function getChecklistBySession(sessionId: string): Promise<ChecklistItem[]> {
-  const { data, error } = await supabase
-    .from('checklist_items')
-    .select('id, data')
-    .eq('data->>sessionId', sessionId);
+  const { data, error } = await withTimeout(
+    supabase.from('checklist_items').select('id, data').eq('data->>sessionId', sessionId),
+  );
   if (error) throw pgErr(error);
   return (data ?? []).map(r => fromRow<ChecklistItem>(r as DataRow));
 }
@@ -230,9 +246,9 @@ export async function getCorrectiveActions(): Promise<CorrectiveAction[]> {
   const cached = hit(qc.correctiveActions);
   if (cached) return cached;
 
-  const { data, error } = await supabase
-    .from('corrective_actions')
-    .select('id, data');
+  const { data, error } = await withTimeout(
+    supabase.from('corrective_actions').select('id, data'),
+  );
   if (error) throw pgErr(error);
   const result = (data ?? []).map(r => fromRow<CorrectiveAction>(r as DataRow));
   qc.correctiveActions = { data: result, at: Date.now() };
@@ -240,10 +256,9 @@ export async function getCorrectiveActions(): Promise<CorrectiveAction[]> {
 }
 
 export async function getCorrectiveActionsBySession(sessionId: string): Promise<CorrectiveAction[]> {
-  const { data, error } = await supabase
-    .from('corrective_actions')
-    .select('id, data')
-    .eq('data->>sessionId', sessionId);
+  const { data, error } = await withTimeout(
+    supabase.from('corrective_actions').select('id, data').eq('data->>sessionId', sessionId),
+  );
   if (error) throw pgErr(error);
   return (data ?? []).map(r => fromRow<CorrectiveAction>(r as DataRow));
 }
@@ -268,9 +283,9 @@ export async function deleteCorrectiveAction(id: string): Promise<void> {
 // ── Checklist Templates ───────────────────────────────────────────────────────
 
 export async function getChecklistTemplates(): Promise<ChecklistTemplate[]> {
-  const { data, error } = await supabase
-    .from('checklist_templates')
-    .select('id, data');
+  const { data, error } = await withTimeout(
+    supabase.from('checklist_templates').select('id, data'),
+  );
   if (error) throw pgErr(error);
   return (data ?? []).map(r => fromRow<ChecklistTemplate>(r as DataRow));
 }
@@ -294,10 +309,9 @@ export async function deleteChecklistTemplate(id: string): Promise<void> {
 // Note: standards table uses native columns, not the { id, data: JSONB } pattern.
 
 export async function getStandards(): Promise<Standard[]> {
-  const { data, error } = await supabase
-    .from('standards')
-    .select('id, name, version, is_active, created_at')
-    .order('name');
+  const { data, error } = await withTimeout(
+    supabase.from('standards').select('id, name, version, is_active, created_at').order('name'),
+  );
   if (error) throw pgErr(error);
   return (data ?? []) as Standard[];
 }

@@ -87,11 +87,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Safety net: if Supabase auth never fires (network down, misconfigured env,
+    // cold-start timeout) stop blocking the UI after 10 seconds.
+    // The middleware already guards protected routes server-side, so unblocking
+    // the loading state here is safe — an unauthenticated user just sees the
+    // login redirect without an infinite spinner.
+    const authTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 10_000);
+
     // onAuthStateChange fires INITIAL_SESSION immediately on setup,
     // so we don't need a separate getUser() call (which would make an extra
     // network round-trip and trigger a second fetchProfile race).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        clearTimeout(authTimeout); // auth responded — cancel the safety timeout
         const u = session?.user ?? null;
         setUser(u);
 
@@ -114,7 +124,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(authTimeout);
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
   // Enforce password change: redirect any protected page to /auth/set-password

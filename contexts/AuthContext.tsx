@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  createContext, useContext, useEffect, useState, useCallback,
+  createContext, useContext, useEffect, useState, useCallback, useRef,
 } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
@@ -47,6 +47,13 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: async () => {},
 });
 
+// Events that need a fresh profile from the DB.
+// TOKEN_REFRESHED = JWT was silently refreshed — profile data hasn't changed, skip.
+// PASSWORD_RECOVERY = magic-link flow before user sets a password, skip too.
+const PROFILE_FETCH_EVENTS = new Set([
+  'INITIAL_SESSION', 'SIGNED_IN', 'USER_UPDATED',
+]);
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -54,7 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string) => {
+  // Track which userId we last fetched so we never fire two simultaneous requests.
+  const lastFetchedRef = useRef<string | null>(null);
+
+  const fetchProfile = useCallback(async (userId: string, force = false) => {
+    // Skip if we already have a profile for this exact user and aren't forced.
+    // (force = true on USER_UPDATED so role/name changes are reflected immediately.)
+    if (!force && lastFetchedRef.current === userId) return;
+    lastFetchedRef.current = userId;
+
     const { data, error } = await supabase
       .from('profiles')
       .select('id, email, name, role, must_change_password')
@@ -72,24 +87,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user: u } }) => {
-      setUser(u);
-      if (u) {
-        fetchProfile(u.id).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
-
+    // onAuthStateChange fires INITIAL_SESSION immediately on setup,
+    // so we don't need a separate getUser() call (which would make an extra
+    // network round-trip and trigger a second fetchProfile race).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         const u = session?.user ?? null;
         setUser(u);
-        if (u) {
-          await fetchProfile(u.id);
-        } else {
+
+        if (!u) {
+          // Signed out — clear profile and reset cache key.
           setProfile(null);
+          lastFetchedRef.current = null;
+          setLoading(false);
+          return;
         }
+
+        if (PROFILE_FETCH_EVENTS.has(event)) {
+          // USER_UPDATED forces a fresh fetch even if userId is the same
+          // (e.g. admin changed this user's role, or password was updated).
+          await fetchProfile(u.id, event === 'USER_UPDATED');
+        }
+        // TOKEN_REFRESHED: JWT refreshed silently — profile unchanged, no fetch needed.
+
+        setLoading(false);
       },
     );
 

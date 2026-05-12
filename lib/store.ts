@@ -120,16 +120,45 @@ export const deleteSession = deleteAuditPlan;
 
 // ── Plan Sessions ─────────────────────────────────────────────────────────────
 
+// Parse the start time of a session into minutes since midnight (for numeric sort).
+// Handles "9:00-10:00", "09:00-10:00", "9:00 - 10:00", "09.00-10.00" etc.
+// Regex matches the FIRST H:MM or HH:MM pattern in the string, so it is
+// tolerant of separators (hyphen, en-dash, em-dash) and leading spaces.
+function sessionStartMinutes(time: string | undefined): number {
+  const m = (time ?? '').match(/(\d{1,2})[:.h](\d{2})/);
+  if (!m) return Infinity; // no recognisable time → sort last
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
 export async function getPlanSessions(planId?: string): Promise<PlanSession[]> {
   let q = supabase.from('plan_sessions').select('id, plan_id, data');
   if (planId) q = q.eq('plan_id', planId);
   const { data, error } = await q;
   if (error) throw pgErr(error);
-  return (data ?? []).map((r: PlanSessionRow) => ({
+  const sessions = (data ?? []).map((r: PlanSessionRow) => ({
     id: r.id,
     planId: r.plan_id,
     ...r.data,
   } as PlanSession));
+
+  // Sort at the store level so every consumer (Checklist, Plan Detail) gets
+  // pre-sorted data without duplicating sort logic in each page component.
+  //
+  // Priority:
+  //   1. date (ISO "YYYY-MM-DD") — lexicographic ≡ chronological; blanks last
+  //   2. day  (numeric) — tie-break when date is missing or identical
+  //   3. start time converted to minutes — avoids "10:00" < "9:00" string trap
+  return sessions.sort((a, b) => {
+    const dateA = a.date ?? '';
+    const dateB = b.date ?? '';
+    if (dateA !== dateB) {
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return dateA.localeCompare(dateB);
+    }
+    if (a.day !== b.day) return a.day - b.day;
+    return sessionStartMinutes(a.time) - sessionStartMinutes(b.time);
+  });
 }
 
 export async function savePlanSession(session: PlanSession): Promise<void> {

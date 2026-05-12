@@ -237,6 +237,10 @@ export default function ChecklistPage() {
         const pid = ps[0].id;
         setSelectedPlanId(pid);
         const ss = await getPlanSessions(pid);
+        /* DEBUG — verify data returned by getPlanSessions BEFORE setState */
+        console.group('[Checklist] reload() — getPlanSessions returned');
+        ss.forEach((s, i) => console.log(`  [${i}] day=${s.day} | date=${JSON.stringify(s.date)} | time=${JSON.stringify(s.time)}`));
+        console.groupEnd();
         setPlanSessions(ss);
       }
     } catch (e) {
@@ -432,7 +436,14 @@ export default function ChecklistPage() {
                 setSelectedPlanId(pid);
                 setSelectedSessionId('');
                 setFilterStatus('');
-                try { setPlanSessions(await getPlanSessions(pid)); } catch {}
+                try {
+                  const ss2 = await getPlanSessions(pid);
+                  /* DEBUG — verify data from onChange handler */
+                  console.group('[Checklist] onChange — getPlanSessions returned');
+                  ss2.forEach((s, i) => console.log(`  [${i}] day=${s.day} | date=${JSON.stringify(s.date)} | time=${JSON.stringify(s.time)}`));
+                  console.groupEnd();
+                  setPlanSessions(ss2);
+                } catch {}
               }}
             >
               {plans.length === 0 && <option value="">No plans</option>}

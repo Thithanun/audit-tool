@@ -256,13 +256,22 @@ export default function ChecklistPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  // DEBUG — log planSessions the moment state changes, before useMemo runs
+  useEffect(() => {
+    console.group('[Checklist] planSessions state (raw, before useMemo filter)');
+    planSessions.forEach((s, i) =>
+      console.log(`  [${i}] day=${s.day} | date=${JSON.stringify(s.date)} | time=${JSON.stringify(s.time)} | area=${s.areaOfAudit}`)
+    );
+    console.groupEnd();
+  }, [planSessions]);
+
   // getPlanSessions (store) already returns sessions sorted by date → day → start time.
   // This memo only needs to filter out general/non-clause sessions.
   const auditSessions = useMemo(() => {
     const result = planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0);
     /* DEBUG — verify order reaching the dropdown; remove once confirmed */
-    console.group('[Checklist] auditSessions (what dropdown renders)');
-    result.forEach(s => console.log(`  day=${s.day} | date=${s.date} | time=${s.time}`));
+    console.group('[Checklist] auditSessions (after filter, what dropdown renders)');
+    result.forEach((s, i) => console.log(`  [${i}] day=${s.day} | date=${s.date} | time=${s.time}`));
     console.groupEnd();
     return result;
   }, [planSessions]);

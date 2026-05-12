@@ -43,6 +43,19 @@ export async function getAuditPlans(): Promise<AuditPlan[]> {
 
 export const getSessions = getAuditPlans;
 
+export async function getAuditPlanById(id: string): Promise<AuditPlan | null> {
+  const { data, error } = await supabase
+    .from('audit_plans')
+    .select('id, data')
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null; // not found
+    throw pgErr(error);
+  }
+  return fromRow<AuditPlan>(data as DataRow);
+}
+
 export async function saveAuditPlan(plan: AuditPlan): Promise<void> {
   const { error } = await supabase
     .from('audit_plans')

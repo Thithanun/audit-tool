@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus } from '@/lib/types';
 import {
-  getAuditPlans,
+  getAuditPlanById,
   saveAuditPlan,
   deleteAuditPlan,
   getPlanSessions,
@@ -18,6 +18,7 @@ import {
 import { ISMS_CLAUSES, ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
+import PageLoader, { DbError } from '@/components/PageLoader';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -54,14 +55,6 @@ function emptySession(planId: string, nextDay = 1, date = ''): Omit<PlanSession,
   return { planId, day: nextDay, date, time: '', areaOfAudit: '', relatedClauses: [], auditee: '', mainAuditor: '', iaTeam: [] };
 }
 
-function Spinner() {
-  return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-}
-
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function PlanDetailPage() {
@@ -91,12 +84,11 @@ export default function PlanDetailPage() {
     setLoading(true);
     setDbError(null);
     try {
-      const [all, ss, items] = await Promise.all([
-        getAuditPlans(),
+      const [found, ss, items] = await Promise.all([
+        getAuditPlanById(id),
         getPlanSessions(id),
         getChecklistBySession(id),
       ]);
-      const found = all.find(p => p.id === id);
       if (!found) { setNotFound(true); return; }
       setPlan(found);
       setSessions(ss.sort((a, b) => a.day - b.day || a.time.localeCompare(b.time)));
@@ -220,15 +212,9 @@ export default function PlanDetailPage() {
 
   // ── render ────────────────────────────────────────────────────────────────────
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader message="กำลังโหลด Audit Plan…" />;
 
-  if (dbError) return (
-    <div className="text-center py-16 bg-red-50 rounded-xl border border-red-200 mx-4 mt-8">
-      <p className="text-red-600 font-medium mb-1">Unable to connect to database</p>
-      <p className="text-sm text-red-500 mb-4">{dbError}</p>
-      <button onClick={reload} className="text-sm text-blue-600 hover:underline">Try again</button>
-    </div>
-  );
+  if (dbError) return <DbError message={dbError} onRetry={reload} />;
 
   if (notFound) return (
     <div className="max-w-2xl mx-auto px-4 py-20 text-center">

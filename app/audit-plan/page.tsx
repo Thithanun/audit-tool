@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
+import PageLoader, { DbError } from '@/components/PageLoader';
 
 function fmtDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -28,24 +29,6 @@ const emptyPlan = (): Omit<AuditPlan, 'id' | 'createdAt'> => ({
   objective: '', standard: '', scope: '', auditAreas: '',
   leadAuditor: '', startDate: '', endDate: '', status: 'Planned',
 });
-
-function Spinner() {
-  return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-}
-
-function DbError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="text-center py-16 bg-red-50 rounded-xl border border-red-200 mx-4 mt-8">
-      <p className="text-red-600 font-medium mb-1">Unable to connect to database</p>
-      <p className="text-sm text-red-500 mb-4">{message}</p>
-      <button onClick={onRetry} className="text-sm text-blue-600 hover:underline">Try again</button>
-    </div>
-  );
-}
 
 export default function AuditPlanListPage() {
   const { canEditAuditPlan: canEdit } = useAuth();
@@ -115,7 +98,7 @@ export default function AuditPlanListPage() {
     }
   }
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader message="กำลังโหลด Audit Plans…" />;
   if (dbError) return <DbError message={dbError} onRetry={reload} />;
 
   return (

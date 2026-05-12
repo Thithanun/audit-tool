@@ -16,6 +16,7 @@ import {
 import { ALL_CLAUSES } from '@/lib/seed-data';
 import Modal from '@/components/Modal';
 import { useAuth } from '@/contexts/AuthContext';
+import PageLoader, { DbError } from '@/components/PageLoader';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -222,19 +223,28 @@ export default function ChecklistPage() {
     setLoading(true);
     setDbError(null);
     try {
-      // Critical path: plans + checklist items — page cannot function without these
+      // Critical path: plans + checklist items in parallel
       const [ps, is] = await Promise.all([
         getAuditPlans(),
         getChecklistItems(),
       ]);
       setPlans(ps);
       setItems(is.filter(i => !isNistItem(i)));
+
+      // Fetch plan sessions for the first plan immediately — no second render
+      // cycle needed (eliminates the sequential useEffect round-trip)
+      if (ps.length > 0) {
+        const pid = ps[0].id;
+        setSelectedPlanId(pid);
+        const ss = await getPlanSessions(pid);
+        setPlanSessions(ss);
+      }
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
       setLoading(false);
     }
-    // Templates are non-critical — load separately so they never block the page
+    // Templates are non-critical — never block the page
     try {
       setTemplates(await getChecklistTemplates());
     } catch (e) {
@@ -243,14 +253,6 @@ export default function ChecklistPage() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
-
-  useEffect(() => {
-    if (plans.length > 0 && !selectedPlanId) {
-      const pid = plans[0].id;
-      setSelectedPlanId(pid);
-      getPlanSessions(pid).then(setPlanSessions).catch(() => {});
-    }
-  }, [plans, selectedPlanId]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -377,19 +379,8 @@ export default function ChecklistPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-
-  if (dbError) return (
-    <div className="text-center py-16 bg-red-50 rounded-xl border border-red-200 mx-4 mt-8">
-      <p className="text-red-600 font-medium mb-1">Unable to connect to database</p>
-      <p className="text-sm text-red-500 mb-4">{dbError}</p>
-      <button onClick={reload} className="text-sm text-blue-600 hover:underline">Try again</button>
-    </div>
-  );
+  if (loading) return <PageLoader message="กำลังโหลด Checklist…" />;
+  if (dbError) return <DbError message={dbError} onRetry={reload} />;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28">

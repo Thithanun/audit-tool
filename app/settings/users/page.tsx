@@ -6,6 +6,7 @@ import { useAuth, type UserProfile, type UserRole } from '@/contexts/AuthContext
 import { supabase } from '@/lib/supabase';
 import { createUser, updateUserRole, removeUser } from './actions';
 import Modal from '@/components/Modal';
+import PageLoader from '@/components/PageLoader';
 
 const ROLES: UserRole[] = ['admin', 'auditor', 'viewer'];
 
@@ -14,14 +15,6 @@ const ROLE_BADGE: Record<UserRole, string> = {
   auditor: 'bg-blue-100 text-blue-700 border-blue-200',
   viewer:  'bg-slate-100 text-slate-600 border-slate-200',
 };
-
-function Spinner() {
-  return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-}
 
 export default function UsersPage() {
   const router = useRouter();
@@ -105,7 +98,7 @@ export default function UsersPage() {
     setDeleting(false);
   }
 
-  if (authLoading || loading) return <Spinner />;
+  if (authLoading || loading) return <PageLoader message="กำลังโหลดรายชื่อ Users…" />;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

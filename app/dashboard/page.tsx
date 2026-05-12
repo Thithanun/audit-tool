@@ -83,8 +83,7 @@ export default function DashboardPage() {
   }, [filteredItems]);
 
   const total = filteredItems.length;
-  const ncCount = statusCounts['NC-Minor'] + statusCounts['NC-Major'];
-  const conformityPct = total === 0 ? 0 : Math.round((statusCounts['Conformity'] / total) * 100);
+  const pct = (n: number) => total === 0 ? 0 : Math.round((n / total) * 100);
 
   // Clause-level breakdown
   const clauseBreakdown = useMemo(() => {
@@ -156,26 +155,47 @@ export default function DashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        {/* Total Controls */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs font-medium text-slate-500 mb-1">Total Controls</p>
           <p className="text-3xl font-bold text-slate-900">{total}</p>
           <p className="text-xs text-slate-400 mt-1">{statusCounts['Not Assessed']} not assessed</p>
         </div>
+
+        {/* Conformity */}
         <div className="bg-green-50 rounded-xl border border-green-200 p-4">
           <p className="text-xs font-medium text-green-600 mb-1">Conformity</p>
           <p className="text-3xl font-bold text-green-700">{statusCounts['Conformity']}</p>
-          <p className="text-xs text-green-500 mt-1">{conformityPct}% of total</p>
+          <p className="text-xs text-green-500 mt-1">{pct(statusCounts['Conformity'])}% of total</p>
         </div>
+
+        {/* OBS */}
+        <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
+          <p className="text-xs font-medium text-blue-600 mb-1">OBS</p>
+          <p className="text-3xl font-bold text-blue-700">{statusCounts['OBS']}</p>
+          <p className="text-xs text-blue-500 mt-1">{pct(statusCounts['OBS'])}% of total</p>
+        </div>
+
+        {/* OFI */}
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
-          <p className="text-xs font-medium text-amber-600 mb-1">OBS + OFI</p>
-          <p className="text-3xl font-bold text-amber-700">{statusCounts['OBS'] + statusCounts['OFI']}</p>
-          <p className="text-xs text-amber-500 mt-1">{statusCounts['OBS']} OBS · {statusCounts['OFI']} OFI</p>
+          <p className="text-xs font-medium text-amber-600 mb-1">OFI</p>
+          <p className="text-3xl font-bold text-amber-700">{statusCounts['OFI']}</p>
+          <p className="text-xs text-amber-500 mt-1">{pct(statusCounts['OFI'])}% of total</p>
         </div>
+
+        {/* NC Minor */}
+        <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
+          <p className="text-xs font-medium text-orange-600 mb-1">NC Minor</p>
+          <p className="text-3xl font-bold text-orange-700">{statusCounts['NC-Minor']}</p>
+          <p className="text-xs text-orange-500 mt-1">{pct(statusCounts['NC-Minor'])}% of total</p>
+        </div>
+
+        {/* NC Major */}
         <div className="bg-red-50 rounded-xl border border-red-200 p-4">
-          <p className="text-xs font-medium text-red-600 mb-1">Non-Conformities</p>
-          <p className="text-3xl font-bold text-red-700">{ncCount}</p>
-          <p className="text-xs text-red-500 mt-1">{statusCounts['NC-Minor']} Minor · {statusCounts['NC-Major']} Major</p>
+          <p className="text-xs font-medium text-red-600 mb-1">NC Major</p>
+          <p className="text-3xl font-bold text-red-700">{statusCounts['NC-Major']}</p>
+          <p className="text-xs text-red-500 mt-1">{pct(statusCounts['NC-Major'])}% of total</p>
         </div>
       </div>
 

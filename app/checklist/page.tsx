@@ -345,6 +345,78 @@ export default function ChecklistPage() {
     saveChecklistTemplate(t).catch(e => console.error('Template save failed:', e));
   }
 
+  async function handleExportExcel() {
+    if (visibleItems.length === 0) return;
+
+    // Build a lookup map: sessionId → PlanSession for fast access
+    const sessionMap = new Map(planSessions.map(s => [s.id, s]));
+
+    // Column headers
+    const headers = [
+      '#', 'Day', 'Date', 'Time', 'Area of Audit', 'Auditee',
+      'Clause', 'Clause Title', 'Framework',
+      'Checklist / Question',
+      'Status', 'Remark / Notes', 'Evidence', 'Recommendation', 'Due Date',
+    ];
+
+    const rows = visibleItems.map((item, idx) => {
+      const session = sessionMap.get(item.sessionId);
+      return [
+        idx + 1,
+        session ? `Day ${session.day}` : '',
+        session?.date ?? '',
+        session?.time ?? '',
+        session?.areaOfAudit ?? '',
+        session?.auditee ?? '',
+        item.clauseRef,
+        item.clauseTitle,
+        item.framework,
+        item.question?.trim() || item.requirement,
+        item.status,
+        item.notes,
+        item.evidence,
+        item.recommendation ?? '',
+        item.dueDate ?? '',
+      ];
+    });
+
+    const XLSX = await import('xlsx');
+    const wb  = XLSX.utils.book_new();
+    const ws  = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // Column widths (characters)
+    ws['!cols'] = [
+      { wch: 4  },  // #
+      { wch: 6  },  // Day
+      { wch: 12 },  // Date
+      { wch: 16 },  // Time
+      { wch: 24 },  // Area
+      { wch: 20 },  // Auditee
+      { wch: 10 },  // Clause
+      { wch: 36 },  // Clause Title
+      { wch: 12 },  // Framework
+      { wch: 60 },  // Question
+      { wch: 14 },  // Status
+      { wch: 40 },  // Remark
+      { wch: 40 },  // Evidence
+      { wch: 40 },  // Recommendation
+      { wch: 12 },  // Due Date
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Checklist');
+
+    // Filename: include plan name + session label if filtered
+    const planName = plans.find(p => p.id === selectedPlanId)?.objective ?? 'checklist';
+    const sessionSuffix = selectedSession
+      ? `_Day${selectedSession.day}`
+      : '';
+    const safeName = `${planName}${sessionSuffix}`
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 60);
+
+    XLSX.writeFile(wb, `${safeName}.xlsx`);
+  }
+
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
     const clauseInfo = ALL_CLAUSES.find(c => c.clauseRef === addForm.clauseRef);
@@ -714,10 +786,14 @@ export default function ChecklistPage() {
           {statusCounts['OFI'] > 0 && <span className="font-medium text-blue-600">OFI: {statusCounts['OFI']}</span>}
         </div>
         <button
-          onClick={() => window.print()}
-          className="text-sm font-medium text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 transition-colors flex-shrink-0"
+          onClick={handleExportExcel}
+          disabled={visibleItems.length === 0}
+          className="text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 transition-colors flex-shrink-0 flex items-center gap-1.5"
         >
-          Export PDF
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export Excel
         </button>
       </div>
 

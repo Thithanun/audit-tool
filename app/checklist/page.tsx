@@ -257,16 +257,21 @@ export default function ChecklistPage() {
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const auditSessions = useMemo(() => {
-    // Extract "HH:MM" start time from a "HH:MM-HH:MM" or "HH:MM" string.
-    // Falls back to empty string (sorts last) when the field is blank.
-    function startTime(s: PlanSession): string {
-      return (s.time ?? '').split('-')[0].trim();
+    // Convert "H:MM" or "HH:MM" (start of a "H:MM-H:MM" range) → minutes since midnight.
+    // String comparison fails without leading zeros: "10:00" < "9:00" lexicographically,
+    // so we always compare as numbers.
+    function startMinutes(s: PlanSession): number {
+      const raw = (s.time ?? '').split('-')[0].trim(); // "9:00" or "09:00"
+      const [h, m] = raw.split(':').map(Number);
+      if (isNaN(h)) return Infinity; // no time set → sort last
+      return h * 60 + (m || 0);
     }
 
     return planSessions
       .filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0)
       .sort((a, b) => {
-        // 1. date (ISO "YYYY-MM-DD") — sorts lexicographically, blanks go last
+        // 1. date (ISO "YYYY-MM-DD") — lexicographic sort is correct for ISO dates;
+        //    blanks sort last.
         const dateA = a.date ?? '';
         const dateB = b.date ?? '';
         if (dateA !== dateB) {
@@ -274,10 +279,11 @@ export default function ChecklistPage() {
           if (!dateB) return -1;
           return dateA.localeCompare(dateB);
         }
-        // 2. day number — tie-break when date is missing or identical
+        // 2. day number — tie-break when date is identical or both missing
         if (a.day !== b.day) return a.day - b.day;
-        // 3. start time within the same day
-        return startTime(a).localeCompare(startTime(b));
+        // 3. start time as numeric minutes — avoids string-sort pitfall where
+        //    "10:00" < "9:00" because '1' < '9'
+        return startMinutes(a) - startMinutes(b);
       });
   }, [planSessions]);
 

@@ -2,14 +2,25 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, type UserRole } from '@/contexts/AuthContext';
+
+const ROLE_BADGE: Record<UserRole, string> = {
+  admin:   'bg-purple-100 text-purple-700 border-purple-200',
+  auditor: 'bg-blue-100  text-blue-700  border-blue-200',
+  viewer:  'bg-slate-100 text-slate-600 border-slate-200',
+};
 
 export default function Navbar() {
   const pathname = usePathname();
   const { profile, loading, isAdmin, canSeeChecklist, signOut } = useAuth();
 
-  // While auth is resolving, show all tabs (fail-open) so they never flicker
-  // away for non-viewers.  For viewers the tab disappears once loading finishes.
+  // Fail-open during auth load: show all tabs briefly so admin/auditor users
+  // never see menus flicker away. Once loading resolves, role-based rules apply.
+  //
+  // Visibility matrix:
+  //   Viewer  → Audit Plan · Dashboard
+  //   Auditor → Audit Plan · Checklist · Dashboard
+  //   Admin   → Audit Plan · Checklist · Dashboard · Users
   const NAV_LINKS = [
     { href: '/audit-plan', label: 'Audit Plan', visible: true },
     { href: '/checklist',  label: 'Checklist',  visible: loading || canSeeChecklist },
@@ -17,6 +28,10 @@ export default function Navbar() {
   ];
 
   if (pathname === '/login' || pathname.startsWith('/auth/')) return null;
+
+  // Display name: prefer non-empty name, fall back to email
+  const displayName = (profile?.name?.trim()) || profile?.email || '';
+  const avatarChar  = displayName.charAt(0).toUpperCase();
 
   return (
     <nav className="bg-white border-b border-slate-200 shadow-sm">
@@ -75,12 +90,14 @@ export default function Navbar() {
               <div className="flex items-center gap-2">
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-medium text-slate-800 leading-tight">
-                    {profile.name || profile.email}
+                    {displayName}
                   </p>
-                  <p className="text-xs text-slate-400 capitalize">{profile.role}</p>
+                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded border capitalize ${ROLE_BADGE[profile.role]}`}>
+                    {profile.role}
+                  </span>
                 </div>
-                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-semibold text-slate-600">
-                  {(profile.name || profile.email).charAt(0).toUpperCase()}
+                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-semibold text-slate-600 shrink-0">
+                  {avatarChar}
                 </div>
               </div>
             )}

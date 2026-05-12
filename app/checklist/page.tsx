@@ -256,10 +256,30 @@ export default function ChecklistPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const auditSessions = useMemo(
-    () => planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0),
-    [planSessions],
-  );
+  const auditSessions = useMemo(() => {
+    // Extract "HH:MM" start time from a "HH:MM-HH:MM" or "HH:MM" string.
+    // Falls back to empty string (sorts last) when the field is blank.
+    function startTime(s: PlanSession): string {
+      return (s.time ?? '').split('-')[0].trim();
+    }
+
+    return planSessions
+      .filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0)
+      .sort((a, b) => {
+        // 1. date (ISO "YYYY-MM-DD") — sorts lexicographically, blanks go last
+        const dateA = a.date ?? '';
+        const dateB = b.date ?? '';
+        if (dateA !== dateB) {
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return dateA.localeCompare(dateB);
+        }
+        // 2. day number — tie-break when date is missing or identical
+        if (a.day !== b.day) return a.day - b.day;
+        // 3. start time within the same day
+        return startTime(a).localeCompare(startTime(b));
+      });
+  }, [planSessions]);
 
   const selectedSession = useMemo(
     () => auditSessions.find(s => s.id === selectedSessionId) ?? null,

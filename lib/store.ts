@@ -122,11 +122,18 @@ export const deleteSession = deleteAuditPlan;
 
 // Parse the start time of a session into minutes since midnight (for numeric sort).
 // Handles "9:00-10:00", "09:00-10:00", "9:00 - 10:00", "09.00-10.00" etc.
-// Regex matches the FIRST H:MM or HH:MM pattern in the string, so it is
-// tolerant of separators (hyphen, en-dash, em-dash) and leading spaces.
+// Regex matches the FIRST H:MM or HH:MM pattern in the string.
 function sessionStartMinutes(time: string | undefined): number {
-  const m = (time ?? '').match(/(\d{1,2})[:.h](\d{2})/);
-  if (!m) return Infinity; // no recognisable time → sort last
+  const raw = time ?? '';
+  const m = raw.match(/(\d{1,2})[:.h](\d{2})/);
+  /* DEBUG — remove after confirming sort is correct */
+  console.log(
+    '[sort] time raw:', JSON.stringify(raw),
+    '| typeof:', typeof raw,
+    '| regex match:', m ? `${m[1]}:${m[2]}` : 'NO MATCH',
+    '| minutes:', m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 'Infinity',
+  );
+  if (!m) return Infinity;
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 }
 
@@ -141,14 +148,21 @@ export async function getPlanSessions(planId?: string): Promise<PlanSession[]> {
     ...r.data,
   } as PlanSession));
 
-  // Sort at the store level so every consumer (Checklist, Plan Detail) gets
-  // pre-sorted data without duplicating sort logic in each page component.
-  //
-  // Priority:
+  /* DEBUG — log each session's raw fields before sorting */
+  console.group('[getPlanSessions] before sort');
+  sessions.forEach(s => console.log(
+    `  day=${s.day} (${typeof s.day})`,
+    `| date=${JSON.stringify(s.date)}`,
+    `| time=${JSON.stringify(s.time)}`,
+    `| area=${s.areaOfAudit}`,
+  ));
+  console.groupEnd();
+
+  // Sort priority:
   //   1. date (ISO "YYYY-MM-DD") — lexicographic ≡ chronological; blanks last
   //   2. day  (numeric) — tie-break when date is missing or identical
-  //   3. start time converted to minutes — avoids "10:00" < "9:00" string trap
-  return sessions.sort((a, b) => {
+  //   3. start time as minutes — avoids "10:00" < "9:00" string trap
+  const sorted = sessions.slice().sort((a, b) => {
     const dateA = a.date ?? '';
     const dateB = b.date ?? '';
     if (dateA !== dateB) {
@@ -156,9 +170,20 @@ export async function getPlanSessions(planId?: string): Promise<PlanSession[]> {
       if (!dateB) return -1;
       return dateA.localeCompare(dateB);
     }
-    if (a.day !== b.day) return a.day - b.day;
+    const dayA = typeof a.day === 'number' ? a.day : Number(a.day);
+    const dayB = typeof b.day === 'number' ? b.day : Number(b.day);
+    if (dayA !== dayB) return dayA - dayB;
     return sessionStartMinutes(a.time) - sessionStartMinutes(b.time);
   });
+
+  /* DEBUG — log sorted result */
+  console.group('[getPlanSessions] after sort');
+  sorted.forEach(s => console.log(
+    `  day=${s.day} | date=${s.date} | time=${s.time} | mins=${sessionStartMinutes(s.time)}`,
+  ));
+  console.groupEnd();
+
+  return sorted;
 }
 
 export async function savePlanSession(session: PlanSession): Promise<void> {

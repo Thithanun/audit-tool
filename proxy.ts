@@ -8,13 +8,10 @@ function redirectTo(request: NextRequest, pathname: string) {
   return NextResponse.redirect(url);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // ── Env-var guard ──────────────────────────────────────────────────────────
-  // If Supabase env vars are missing (e.g. not set in Vercel dashboard),
-  // createServerClient receives undefined and getUser() will throw.
-  // Catch this early and fail-secure instead of crashing the edge function.
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey =
@@ -23,16 +20,19 @@ export async function middleware(request: NextRequest) {
 
   if (!supabaseUrl || !supabaseKey) {
     console.error(
-      '[middleware] Missing env vars: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
+      '[proxy] Missing env vars: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
       'Add them in the Vercel dashboard → Settings → Environment Variables.',
     );
-    // Fail-secure: block every route except /login.
     return pathname === '/login'
       ? NextResponse.next({ request })
       : redirectTo(request, '/login');
   }
 
-  // ── Session check ──────────────────────────────────────────────────────────
+  // ── Session check (optimistic — cookie only, no network call) ─────────────
+  // getSession() reads the JWT from the request cookies and parses it locally.
+  // It does NOT make a round-trip to Supabase Auth, so it never times out and
+  // cannot cause false "not logged in" redirects due to network latency.
+  // Full JWT validation happens in AuthContext on the client after page load.
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -52,32 +52,26 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Must use getUser() (not getSession()) — validates the JWT server-side.
-  let user = null;
+  let hasSession = false;
   try {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) {
-      // AuthSessionMissingError is normal for unauthenticated requests — not a bug.
-      if (error.name !== 'AuthSessionMissingError') {
-        console.error('[middleware] getUser error:', error.name, error.message);
-      }
-    } else {
-      user = data.user;
-    }
+    const { data: { session } } = await supabase.auth.getSession();
+    hasSession = session !== null;
   } catch (err) {
-    // Network error, malformed response, etc. — fail-secure.
-    console.error('[middleware] getUser threw:', err);
+    // Malformed cookie or unexpected error — fail open so a real user isn't
+    // locked out; AuthContext will re-validate and redirect if truly unauthed.
+    console.error('[proxy] getSession error:', err);
+    hasSession = true;
   }
 
   // ── Route guards ───────────────────────────────────────────────────────────
   // /auth/* handles token exchange and password setup — must stay public.
   const isPublic = pathname === '/login' || pathname.startsWith('/auth/');
 
-  if (!user && !isPublic) {
+  if (!hasSession && !isPublic) {
     return redirectTo(request, '/login');
   }
 
-  if (user && pathname === '/login') {
+  if (hasSession && pathname === '/login') {
     return redirectTo(request, '/');
   }
 

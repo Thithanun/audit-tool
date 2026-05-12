@@ -258,10 +258,14 @@ export default function ChecklistPage() {
 
   // getPlanSessions (store) already returns sessions sorted by date → day → start time.
   // This memo only needs to filter out general/non-clause sessions.
-  const auditSessions = useMemo(
-    () => planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0),
-    [planSessions],
-  );
+  const auditSessions = useMemo(() => {
+    const result = planSessions.filter(s => !isGeneralSession(s) && s.relatedClauses.length > 0);
+    /* DEBUG — verify order reaching the dropdown; remove once confirmed */
+    console.group('[Checklist] auditSessions (what dropdown renders)');
+    result.forEach(s => console.log(`  day=${s.day} | date=${s.date} | time=${s.time}`));
+    console.groupEnd();
+    return result;
+  }, [planSessions]);
 
   const selectedSession = useMemo(
     () => auditSessions.find(s => s.id === selectedSessionId) ?? null,

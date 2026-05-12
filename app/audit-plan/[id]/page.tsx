@@ -91,7 +91,7 @@ export default function PlanDetailPage() {
       ]);
       if (!found) { setNotFound(true); return; }
       setPlan(found);
-      setSessions(ss.sort((a, b) => a.day - b.day || a.time.localeCompare(b.time)));
+      setSessions(ss); // getPlanSessions already sorts by date → day → start time
       setPlanItems(items);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');

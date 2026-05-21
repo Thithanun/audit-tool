@@ -44,9 +44,10 @@ function reportNumber(plan: AuditPlan, idx: number): string {
 const NCR_TYPE_ORDER: Record<ReportNcrType, number> = {
   'NC-Major': 0,
   'NC-Minor': 1,
-  'OBS': 2,
+  'OBS':      2,
 };
 
+// Badge pill styling per type
 const BADGE_CLASS: Record<ReportNcrType, string> = {
   'NC-Major': 'bg-red-100 text-red-700 border border-red-200',
   'NC-Minor': 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -56,23 +57,28 @@ const BADGE_CLASS: Record<ReportNcrType, string> = {
 const NCR_LABEL: Record<ReportNcrType, string> = {
   'NC-Major': 'NC Major',
   'NC-Minor': 'NC Minor',
-  'OBS':      'OBS',
+  'OBS':      'Observation',
+};
+
+// Left border accent colour per type (Tailwind border-l-4 + colour)
+const CARD_ACCENT: Record<ReportNcrType, string> = {
+  'NC-Major': 'border-l-red-500',
+  'NC-Minor': 'border-l-orange-400',
+  'OBS':      'border-l-blue-400',
 };
 
 // ── Signature Canvas Modal ────────────────────────────────────────────────────
 
 interface SigModalProps {
   open: boolean;
-  title: string;
   onConfirm: (dataUrl: string) => void;
   onClose: () => void;
 }
 
-function SigModal({ open, title, onConfirm, onClose }: SigModalProps) {
+function SigModal({ open, onConfirm, onClose }: SigModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
 
-  // Attach / detach drawing listeners every time the modal opens
   useEffect(() => {
     if (!open) return;
     const canvas = canvasRef.current;
@@ -86,65 +92,46 @@ function SigModal({ open, title, onConfirm, onClose }: SigModalProps) {
     function pos(clientX: number, clientY: number) {
       const r = canvas!.getBoundingClientRect();
       return {
-        x: (clientX - r.left) * (canvas!.width / r.width),
+        x: (clientX - r.left) * (canvas!.width  / r.width),
         y: (clientY - r.top)  * (canvas!.height / r.height),
       };
     }
 
-    const onDown = (e: MouseEvent) => {
-      drawing.current = true;
-      const p = pos(e.clientX, e.clientY);
-      ctx.beginPath(); ctx.moveTo(p.x, p.y);
-    };
-    const onMove = (e: MouseEvent) => {
-      if (!drawing.current) return;
-      const p = pos(e.clientX, e.clientY);
-      ctx.lineTo(p.x, p.y); ctx.stroke();
-    };
-    const onUp = () => { drawing.current = false; };
+    const onDown  = (e: MouseEvent) => { drawing.current = true; const p = pos(e.clientX, e.clientY); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const onMove  = (e: MouseEvent) => { if (!drawing.current) return; const p = pos(e.clientX, e.clientY); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+    const onUp    = () => { drawing.current = false; };
+    const onTouchStart = (e: TouchEvent) => { e.preventDefault(); drawing.current = true; const p = pos(e.touches[0].clientX, e.touches[0].clientY); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const onTouchMove  = (e: TouchEvent) => { e.preventDefault(); if (!drawing.current) return; const p = pos(e.touches[0].clientX, e.touches[0].clientY); ctx.lineTo(p.x, p.y); ctx.stroke(); };
 
-    const onTouchStart = (e: TouchEvent) => {
-      e.preventDefault(); drawing.current = true;
-      const p = pos(e.touches[0].clientX, e.touches[0].clientY);
-      ctx.beginPath(); ctx.moveTo(p.x, p.y);
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      if (!drawing.current) return;
-      const p = pos(e.touches[0].clientX, e.touches[0].clientY);
-      ctx.lineTo(p.x, p.y); ctx.stroke();
-    };
-
-    canvas.addEventListener('mousedown', onDown);
-    canvas.addEventListener('mousemove', onMove);
-    canvas.addEventListener('mouseup', onUp);
+    canvas.addEventListener('mousedown',  onDown);
+    canvas.addEventListener('mousemove',  onMove);
+    canvas.addEventListener('mouseup',    onUp);
     canvas.addEventListener('mouseleave', onUp);
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-    canvas.addEventListener('touchend', onUp);
+    canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    canvas.addEventListener('touchend',   onUp);
     return () => {
-      canvas.removeEventListener('mousedown', onDown);
-      canvas.removeEventListener('mousemove', onMove);
-      canvas.removeEventListener('mouseup', onUp);
+      canvas.removeEventListener('mousedown',  onDown);
+      canvas.removeEventListener('mousemove',  onMove);
+      canvas.removeEventListener('mouseup',    onUp);
       canvas.removeEventListener('mouseleave', onUp);
       canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchmove', onTouchMove);
-      canvas.removeEventListener('touchend', onUp);
+      canvas.removeEventListener('touchmove',  onTouchMove);
+      canvas.removeEventListener('touchend',   onUp);
     };
   }, [open]);
 
   function clearCanvas() {
-    const canvas = canvasRef.current;
-    if (canvas) canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height);
+    const c = canvasRef.current;
+    if (c) c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
   }
 
   function confirm() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
-    const isEmpty = ctx.getImageData(0, 0, canvas.width, canvas.height).data.every(v => v === 0);
+    const c = canvasRef.current;
+    if (!c) return;
+    const isEmpty = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.every(v => v === 0);
     if (isEmpty) { alert('กรุณาวาดลายเซ็นก่อนยืนยัน'); return; }
-    onConfirm(canvas.toDataURL('image/png'));
+    onConfirm(c.toDataURL('image/png'));
     clearCanvas();
   }
 
@@ -157,7 +144,7 @@ function SigModal({ open, title, onConfirm, onClose }: SigModalProps) {
     >
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 w-full max-w-sm">
         <h3 className="text-base font-semibold text-slate-900 mb-1">ลงนามดิจิทัล</h3>
-        <p className="text-sm text-slate-500 mb-4">{title}</p>
+        <p className="text-sm text-slate-500 mb-4">Management Committee — คณะกรรมการบริหาร</p>
         <canvas
           ref={canvasRef}
           width={340} height={140}
@@ -165,22 +152,13 @@ function SigModal({ open, title, onConfirm, onClose }: SigModalProps) {
           style={{ touchAction: 'none' }}
         />
         <div className="flex items-center gap-2 mt-4 justify-end">
-          <button
-            onClick={clearCanvas}
-            className="text-sm text-slate-500 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors"
-          >
+          <button onClick={clearCanvas} className="text-sm text-slate-500 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
             ล้าง
           </button>
-          <button
-            onClick={() => { clearCanvas(); onClose(); }}
-            className="text-sm text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors"
-          >
+          <button onClick={() => { clearCanvas(); onClose(); }} className="text-sm text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
             ยกเลิก
           </button>
-          <button
-            onClick={confirm}
-            className="text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
+          <button onClick={confirm} className="text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
             ✓ ยืนยันลายเซ็น
           </button>
         </div>
@@ -192,18 +170,15 @@ function SigModal({ open, title, onConfirm, onClose }: SigModalProps) {
 // ── Signature Box ─────────────────────────────────────────────────────────────
 
 interface SigBoxProps {
-  name: string;
-  role: string;
   sig: ReportSignature | undefined;
   canSign: boolean;
   onSign: () => void;
   onClear: () => void;
 }
 
-function SigBox({ name, role, sig, canSign, onSign, onClear }: SigBoxProps) {
+function SigBox({ sig, canSign, onSign, onClear }: SigBoxProps) {
   const previewRef = useRef<HTMLCanvasElement>(null);
 
-  // Render sig image into preview canvas when sig changes
   useEffect(() => {
     const canvas = previewRef.current;
     if (!canvas) return;
@@ -218,50 +193,111 @@ function SigBox({ name, role, sig, canSign, onSign, onClear }: SigBoxProps) {
   const signed = !!sig;
 
   return (
-    <div className={`rounded-xl border p-4 flex flex-col gap-3 transition-colors ${
+    <div className={`rounded-xl border p-5 flex flex-col items-center gap-4 transition-colors ${
       signed ? 'bg-green-50 border-green-300' : 'bg-white border-slate-200'
     }`}>
       {/* Preview canvas */}
       <canvas
         ref={previewRef}
-        width={300} height={70}
-        className={`w-full rounded-lg border ${
-          signed ? 'border-green-200 bg-green-50' : 'border-dashed border-slate-300 bg-slate-50'
+        width={340} height={80}
+        className={`w-full max-w-sm rounded-lg border ${
+          signed ? 'border-green-200 bg-green-50/60' : 'border-dashed border-slate-300 bg-slate-50'
         }`}
       />
 
-      {/* Actions */}
+      {/* Sign / clear buttons */}
       {canSign && (
-        <div className="flex gap-2 justify-center">
+        <div className="flex gap-2">
           <button
             onClick={onSign}
-            className="text-xs border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors text-slate-700"
+            className="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors text-slate-700 font-medium"
           >
             ✏️ ลงนาม
           </button>
           {signed && (
-            <button
-              onClick={onClear}
-              className="text-xs text-slate-400 hover:text-red-500 transition-colors"
-            >
+            <button onClick={onClear} className="text-sm text-slate-400 hover:text-red-500 transition-colors px-2">
               ล้าง
             </button>
           )}
         </div>
       )}
 
-      {/* Name + role + stamp */}
+      {/* Name / role / timestamp */}
       <div className="text-center">
-        <p className="text-sm font-medium text-slate-800">{name}</p>
-        <p className="text-xs text-slate-500">{role}</p>
-        <div className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full mt-1.5 ${
+        <p className="text-sm font-semibold text-slate-800">Management Committee</p>
+        <p className="text-xs text-slate-500 mt-0.5">คณะกรรมการบริหาร</p>
+        <div className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full mt-2 ${
           signed
             ? 'bg-green-100 text-green-800 border border-green-300'
-            : 'bg-slate-100 text-slate-500 border border-dashed border-slate-300'
+            : 'bg-slate-100 text-slate-400 border border-dashed border-slate-300'
         }`}>
           {signed ? `✓ ${formatThaiTs(sig!.signedAt)}` : '⏱ ยังไม่ได้ลงนาม'}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Finding Card ──────────────────────────────────────────────────────────────
+
+interface FindingCardProps {
+  finding: CorrectiveAction;
+  findingId: string;
+}
+
+function FindingCard({ finding: f, findingId }: FindingCardProps) {
+  const t = f.ncrType as ReportNcrType;
+
+  return (
+    <div className={`bg-white rounded-xl border border-slate-200 border-l-4 overflow-hidden ${CARD_ACCENT[t]}`}>
+
+      {/* ── Card header ──────────────────────────────────────────────────── */}
+      <div className="px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-xs text-slate-400">{findingId}</span>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_CLASS[t]}`}>
+              {NCR_LABEL[t]}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-slate-800 leading-snug">{f.description}</p>
+        </div>
+        {f.clauseRef && (
+          <span className="font-mono text-xs text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded-md shrink-0">
+            {f.clauseRef}
+          </span>
+        )}
+      </div>
+
+      {/* ── Card body — 2 columns ─────────────────────────────────────────── */}
+      <div className="px-5 py-4 grid grid-cols-2 gap-5">
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">ผลกระทบ</p>
+          <p className="text-sm text-slate-700 leading-relaxed">{f.impact || '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">ข้อเสนอแนะ</p>
+          <p className="text-sm text-slate-700 leading-relaxed">{f.recommendation || '—'}</p>
+        </div>
+      </div>
+
+      {/* ── Correction plan (shown only if auditee has submitted) ────────── */}
+      {(f.rootCause || f.correctiveAction || f.preventiveAction) && (
+        <div className="px-5 pb-4 pt-0 border-t border-slate-100 grid grid-cols-3 gap-4 mt-0">
+          <div className="pt-3">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">วิเคราะห์สาเหตุ</p>
+            <p className="text-xs text-slate-600 leading-relaxed">{f.rootCause || '—'}</p>
+          </div>
+          <div className="pt-3">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">แนวทางแก้ไข</p>
+            <p className="text-xs text-slate-600 leading-relaxed">{f.correctiveAction || '—'}</p>
+          </div>
+          <div className="pt-3">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">แนวทางป้องกัน</p>
+            <p className="text-xs text-slate-600 leading-relaxed">{f.preventiveAction || '—'}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -271,19 +307,15 @@ function SigBox({ name, role, sig, canSign, onSign, onClear }: SigBoxProps) {
 export default function ReportPage() {
   const { canEditDashboard: canEdit } = useAuth();
 
-  const [plans, setPlans]               = useState<AuditPlan[]>([]);
-  const [allCas, setAllCas]             = useState<CorrectiveAction[]>([]);
+  const [plans, setPlans]                   = useState<AuditPlan[]>([]);
+  const [allCas, setAllCas]                 = useState<CorrectiveAction[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
-  const [loading, setLoading]           = useState(false);
-  const [dbError, setDbError]           = useState<string | null>(null);
+  const [loading, setLoading]               = useState(false);
+  const [dbError, setDbError]               = useState<string | null>(null);
 
-  // Signature state — initialised from the plan's saved data
-  const [signatures, setSignatures]     = useState<ReportSignatures>({});
-  const [sigSaving, setSigSaving]       = useState(false);
-
-  // Modal
-  const [modalOpen, setModalOpen]       = useState(false);
-  const [modalTarget, setModalTarget]   = useState<'leadAuditor' | 'management'>('leadAuditor');
+  const [signatures, setSignatures] = useState<ReportSignatures>({});
+  const [sigSaving, setSigSaving]   = useState(false);
+  const [modalOpen, setModalOpen]   = useState(false);
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -294,10 +326,7 @@ export default function ReportPage() {
       const [ps, cas] = await Promise.all([getAuditPlans(), getCorrectiveActions()]);
       setPlans(ps);
       setAllCas(cas);
-      // Pre-select first plan if none chosen yet
-      if (!selectedPlanId && ps.length > 0) {
-        setSelectedPlanId(ps[0].id);
-      }
+      if (!selectedPlanId && ps.length > 0) setSelectedPlanId(ps[0].id);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
@@ -307,74 +336,50 @@ export default function ReportPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  // ── Derived: selected plan ─────────────────────────────────────────────────
+  // ── Derived ─────────────────────────────────────────────────────────────────
 
-  const selectedPlan = useMemo(
-    () => plans.find(p => p.id === selectedPlanId) ?? null,
-    [plans, selectedPlanId],
-  );
+  const selectedPlan = useMemo(() => plans.find(p => p.id === selectedPlanId) ?? null, [plans, selectedPlanId]);
+  const selectedPlanIdx = useMemo(() => plans.findIndex(p => p.id === selectedPlanId), [plans, selectedPlanId]);
 
-  const selectedPlanIdx = useMemo(
-    () => plans.findIndex(p => p.id === selectedPlanId),
-    [plans, selectedPlanId],
-  );
-
-  // Load plan's saved signatures whenever selected plan changes
   useEffect(() => {
     setSignatures(selectedPlan?.reportSignatures ?? {});
   }, [selectedPlan]);
 
-  // ── Derived: findings ──────────────────────────────────────────────────────
-
-  // NCRs for this plan (ncrType set, sessionId matches, OFI excluded)
+  // Findings: NCRs for this plan, OFI excluded, sorted by severity
   const findings = useMemo(() => {
     if (!selectedPlanId) return [];
     return allCas
-      .filter(ca =>
-        ca.ncrType !== undefined &&
-        ca.ncrType !== 'OFI' &&
-        ca.sessionId === selectedPlanId,
-      )
-      .sort((a, b) =>
-        NCR_TYPE_ORDER[a.ncrType as ReportNcrType] -
-        NCR_TYPE_ORDER[b.ncrType as ReportNcrType],
-      );
+      .filter(ca => ca.ncrType !== undefined && ca.ncrType !== 'OFI' && ca.sessionId === selectedPlanId)
+      .sort((a, b) => NCR_TYPE_ORDER[a.ncrType as ReportNcrType] - NCR_TYPE_ORDER[b.ncrType as ReportNcrType]);
   }, [allCas, selectedPlanId]);
 
   const typeCounts = useMemo(() => {
     const c: Record<ReportNcrType, number> = { 'NC-Major': 0, 'NC-Minor': 0, 'OBS': 0 };
-    for (const f of findings) if (f.ncrType && f.ncrType !== 'OFI') c[f.ncrType as ReportNcrType]++;
+    for (const f of findings) c[f.ncrType as ReportNcrType]++;
     return c;
   }, [findings]);
 
-  // Generate sequential IDs per type within this report
+  // Sequential IDs per type (NCR-YYYY-001 / OBS-YYYY-001)
   const findingIds = useMemo(() => {
-    const year = selectedPlan?.createdAt
-      ? new Date(selectedPlan.createdAt).getFullYear()
-      : new Date().getFullYear();
-    const counters: Record<ReportNcrType, number> = { 'NC-Major': 0, 'NC-Minor': 0, 'OBS': 0 };
+    const year = selectedPlan?.createdAt ? new Date(selectedPlan.createdAt).getFullYear() : new Date().getFullYear();
+    const ctr: Record<ReportNcrType, number> = { 'NC-Major': 0, 'NC-Minor': 0, 'OBS': 0 };
     return findings.map(f => {
       const t = f.ncrType as ReportNcrType;
-      counters[t]++;
-      const prefix = t === 'OBS' ? 'OBS' : 'NCR';
-      return `${prefix}-${year}-${String(counters[t]).padStart(3, '0')}`;
+      ctr[t]++;
+      return `${t === 'OBS' ? 'OBS' : 'NCR'}-${year}-${String(ctr[t]).padStart(3, '0')}`;
     });
   }, [findings, selectedPlan]);
 
-  const bothSigned = !!(signatures.leadAuditor && signatures.management);
+  const isSigned = !!signatures.management;
 
   // ── Signature handlers ─────────────────────────────────────────────────────
 
-  function openSigModal(target: 'leadAuditor' | 'management') {
-    setModalTarget(target);
-    setModalOpen(true);
-  }
-
   async function handleSigConfirm(dataUrl: string) {
     setModalOpen(false);
-    const now = new Date().toISOString();
-    const newSig: ReportSignature = { sigData: dataUrl, signedAt: now };
-    const updated: ReportSignatures = { ...signatures, [modalTarget]: newSig };
+    const updated: ReportSignatures = {
+      ...signatures,
+      management: { sigData: dataUrl, signedAt: new Date().toISOString() },
+    };
     setSignatures(updated);
     if (!selectedPlanId) return;
     setSigSaving(true);
@@ -387,8 +392,8 @@ export default function ReportPage() {
     }
   }
 
-  async function handleSigClear(target: 'leadAuditor' | 'management') {
-    const updated: ReportSignatures = { ...signatures, [target]: undefined };
+  async function handleSigClear() {
+    const updated: ReportSignatures = { ...signatures, management: undefined };
     setSignatures(updated);
     if (!selectedPlanId) return;
     setSigSaving(true);
@@ -410,21 +415,11 @@ export default function ReportPage() {
 
   return (
     <>
-      {/* ── Signature modal ─────────────────────────────────────────────── */}
-      <SigModal
-        open={modalOpen}
-        title={
-          modalTarget === 'leadAuditor'
-            ? 'Lead Auditor — ผู้ตรวจสอบหลัก'
-            : 'Management Representative — ผู้บริหาร'
-        }
-        onConfirm={handleSigConfirm}
-        onClose={() => setModalOpen(false)}
-      />
+      <SigModal open={modalOpen} onConfirm={handleSigConfirm} onClose={() => setModalOpen(false)} />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+        {/* ── Toolbar ────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <label className="text-xs font-medium text-slate-500">Audit Plan</label>
@@ -434,16 +429,11 @@ export default function ReportPage() {
               onChange={e => setSelectedPlanId(e.target.value)}
             >
               {plans.length === 0 && <option value="">ไม่มีแผนการตรวจ</option>}
-              {plans.map(p => (
-                <option key={p.id} value={p.id}>{p.objective}</option>
-              ))}
+              {plans.map(p => <option key={p.id} value={p.id}>{p.objective}</option>)}
             </select>
           </div>
-
-          <div className="flex items-center gap-2">
-            {sigSaving && (
-              <span className="text-xs text-slate-400 animate-pulse">กำลังบันทึก…</span>
-            )}
+          <div className="flex items-center gap-3">
+            {sigSaving && <span className="text-xs text-slate-400 animate-pulse">กำลังบันทึก…</span>}
             <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
@@ -457,140 +447,85 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* ── Report card ───────────────────────────────────────────────────── */}
+        {/* ── Report body ────────────────────────────────────────────────────── */}
         {!selectedPlan ? (
           <div className="text-center py-24 text-slate-400 text-sm">เลือก Audit Plan เพื่อดูรายงาน</div>
         ) : (
-          <div
-            id="report-printable"
-            className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm space-y-8 print:shadow-none print:border-none print:rounded-none"
-          >
+          <div id="report-printable" className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm space-y-8 print:shadow-none print:border-none print:rounded-none">
 
-            {/* ── Header ─────────────────────────────────────────────────── */}
+            {/* ── Report header ─────────────────────────────────────────────── */}
             <div className="flex justify-between items-start pb-5 border-b border-slate-200">
               <div>
                 <h1 className="text-2xl font-medium text-slate-900">Management Report</h1>
                 <p className="text-sm text-slate-500 mt-1">
-                  {selectedPlan.objective} · {selectedPlan.standard} · {selectedPlan.scope || 'ไม่ระบุ scope'}
+                  {selectedPlan.objective} · {selectedPlan.standard}
                 </p>
+                {selectedPlan.scope && (
+                  <p className="text-xs text-slate-400 mt-0.5">Scope: {selectedPlan.scope}</p>
+                )}
               </div>
-              <div className="text-right text-xs text-slate-500 space-y-0.5">
-                <p className="font-semibold text-slate-800 text-sm">
-                  {reportNumber(selectedPlan, selectedPlanIdx)}
-                </p>
+              <div className="text-right text-xs text-slate-500 space-y-0.5 shrink-0">
+                <p className="font-semibold text-slate-800 text-sm">{reportNumber(selectedPlan, selectedPlanIdx)}</p>
                 <p>วันที่ออกรายงาน: {formatThai(new Date().toISOString())}</p>
                 <p>ผู้ตรวจ: {selectedPlan.leadAuditor || '—'}</p>
                 <p>ช่วงเวลา: {formatThai(selectedPlan.startDate)} – {formatThai(selectedPlan.endDate)}</p>
               </div>
             </div>
 
-            {/* ── Summary cards ──────────────────────────────────────────── */}
+            {/* ── Summary stat cards ────────────────────────────────────────── */}
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                สรุปผลการตรวจ
-              </p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">สรุปผลการตรวจ</p>
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-slate-50 rounded-xl p-4">
+                <div className="bg-slate-50 rounded-xl p-4 border-l-4 border-l-red-400">
                   <p className="text-xs text-slate-500 mb-1">NC Major</p>
                   <p className="text-3xl font-medium text-red-700">{typeCounts['NC-Major']}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {typeCounts['NC-Major'] === 0 ? 'ไม่พบประเด็นร้ายแรง' : 'ต้องแก้ไขเร่งด่วน'}
-                  </p>
+                  <p className="text-xs text-slate-400 mt-1">{typeCounts['NC-Major'] === 0 ? 'ไม่พบประเด็นร้ายแรง' : 'ต้องแก้ไขเร่งด่วน'}</p>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-4">
+                <div className="bg-slate-50 rounded-xl p-4 border-l-4 border-l-orange-400">
                   <p className="text-xs text-slate-500 mb-1">NC Minor</p>
                   <p className="text-3xl font-medium text-amber-700">{typeCounts['NC-Minor']}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {typeCounts['NC-Minor'] === 0 ? 'ไม่พบประเด็น' : 'ต้องดำเนินการแก้ไข'}
-                  </p>
+                  <p className="text-xs text-slate-400 mt-1">{typeCounts['NC-Minor'] === 0 ? 'ไม่พบประเด็น' : 'ต้องดำเนินการแก้ไข'}</p>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-4">
+                <div className="bg-slate-50 rounded-xl p-4 border-l-4 border-l-blue-400">
                   <p className="text-xs text-slate-500 mb-1">Observation</p>
                   <p className="text-3xl font-medium text-blue-700">{typeCounts['OBS']}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {typeCounts['OBS'] === 0 ? 'ไม่มีข้อสังเกต' : 'ข้อสังเกตเพื่อปรับปรุง'}
-                  </p>
+                  <p className="text-xs text-slate-400 mt-1">{typeCounts['OBS'] === 0 ? 'ไม่มีข้อสังเกต' : 'ข้อสังเกตเพื่อปรับปรุง'}</p>
                 </div>
               </div>
             </div>
 
-            {/* ── Findings table ─────────────────────────────────────────── */}
+            {/* ── Finding cards ─────────────────────────────────────────────── */}
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                รายละเอียดประเด็นที่พบ
-              </p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">รายละเอียดประเด็นที่พบ</p>
               {findings.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 text-sm bg-slate-50 rounded-xl">
                   ยังไม่มี NCR / OBS ใน Audit Plan นี้
                 </div>
               ) : (
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50">
-                      <th className="text-left text-xs font-medium text-slate-500 px-3 py-2.5 rounded-tl-lg w-28">รหัส / ประเภท</th>
-                      <th className="text-left text-xs font-medium text-slate-500 px-3 py-2.5">รายละเอียดประเด็น</th>
-                      <th className="text-left text-xs font-medium text-slate-500 px-3 py-2.5 rounded-tr-lg w-32">ข้อกำหนด</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {findings.map((f, idx) => {
-                      const t = f.ncrType as ReportNcrType;
-                      return (
-                        <tr key={f.id} className="border-t border-slate-100">
-                          <td className="px-3 py-3 align-top">
-                            <p className="font-mono text-xs text-slate-400">{findingIds[idx]}</p>
-                            <span className={`inline-block mt-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_CLASS[t]}`}>
-                              {NCR_LABEL[t]}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 align-top">
-                            <p className="text-slate-800 leading-relaxed">{f.description}</p>
-                            {f.impact && (
-                              <p className="text-xs text-slate-500 mt-1">ผลกระทบ: {f.impact}</p>
-                            )}
-                            {f.recommendation && (
-                              <p className="text-xs text-slate-500 mt-0.5">ข้อเสนอแนะ: {f.recommendation}</p>
-                            )}
-                            {(f.rootCause || f.correctiveAction) && (
-                              <div className="mt-2 pt-2 border-t border-slate-100 space-y-0.5">
-                                {f.rootCause && (
-                                  <p className="text-xs text-slate-500">สาเหตุ: {f.rootCause}</p>
-                                )}
-                                {f.correctiveAction && (
-                                  <p className="text-xs text-slate-500">แนวทางแก้ไข: {f.correctiveAction}</p>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 align-top text-xs text-slate-500 font-mono">
-                            {f.clauseRef || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="space-y-3">
+                  {findings.map((f, idx) => (
+                    <FindingCard key={f.id} finding={f} findingId={findingIds[idx]} />
+                  ))}
+                </div>
               )}
             </div>
 
-            {/* ── Signature section ──────────────────────────────────────── */}
-            <div className="border border-slate-200 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
+            {/* ── Signature section — Management Committee only ─────────────── */}
+            <div className="border border-slate-200 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-5">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-                    การรับทราบและอนุมัติ
-                  </p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">การรับทราบและอนุมัติ</p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Management ประทับลายเซ็นดิจิทัลเพื่อรับทราบรายงาน
+                    คณะกรรมการบริหารประทับลายเซ็นดิจิทัลเพื่อรับทราบรายงาน
                   </p>
                 </div>
                 <div className="text-xs">
-                  {bothSigned ? (
+                  {isSigned ? (
                     <span className="text-green-700 font-medium flex items-center gap-1">
                       <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
                       </svg>
-                      รายงานได้รับการรับรองครบถ้วน
+                      รายงานได้รับการรับรองแล้ว
                     </span>
                   ) : (
                     <span className="text-slate-400">รอลายเซ็น</span>
@@ -598,26 +533,17 @@ export default function ReportPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Single centred signature box */}
+              <div className="max-w-sm mx-auto">
                 <SigBox
-                  name="Lead Auditor"
-                  role="ผู้ตรวจสอบหลัก"
-                  sig={signatures.leadAuditor}
-                  canSign={canEdit}
-                  onSign={() => openSigModal('leadAuditor')}
-                  onClear={() => handleSigClear('leadAuditor')}
-                />
-                <SigBox
-                  name="Management Representative"
-                  role="ผู้บริหาร / ผู้แทน"
                   sig={signatures.management}
                   canSign={canEdit}
-                  onSign={() => openSigModal('management')}
-                  onClear={() => handleSigClear('management')}
+                  onSign={() => setModalOpen(true)}
+                  onClear={handleSigClear}
                 />
               </div>
 
-              <p className="text-center text-xs text-slate-400 mt-3">
+              <p className="text-center text-xs text-slate-400 mt-4">
                 🔒 ลายเซ็นดิจิทัลพร้อม timestamp ถูกบันทึกในระบบโดยอัตโนมัติเมื่อกดยืนยัน
               </p>
             </div>

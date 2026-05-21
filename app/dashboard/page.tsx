@@ -38,19 +38,21 @@ const STATUS_TEXT: Record<FindingStatus, string> = {
 
 // ── NCR constants ─────────────────────────────────────────────────────────────
 
-const NCR_TYPES = ['NC-Major', 'NC-Minor', 'OBS'] as const;
+const NCR_TYPES = ['NC-Major', 'NC-Minor', 'OBS', 'OFI'] as const;
 type NcrType = typeof NCR_TYPES[number];
 
 const NCR_TYPE_LABEL: Record<NcrType, string> = {
   'NC-Major': 'Major NC',
   'NC-Minor': 'Minor NC',
   'OBS':      'Observation',
+  'OFI':      'OFI',
 };
 
 const NCR_TYPE_BADGE: Record<NcrType, string> = {
   'NC-Major': 'bg-red-100 text-red-700 border border-red-200',
   'NC-Minor': 'bg-orange-100 text-orange-700 border border-orange-200',
   'OBS':      'bg-blue-100 text-blue-700 border border-blue-200',
+  'OFI':      'bg-amber-100 text-amber-700 border border-amber-200',
 };
 
 const NCR_STATUS_LABEL: Record<CorrectiveActionStatus, string> = {
@@ -156,7 +158,7 @@ export default function DashboardPage() {
   const pct   = (n: number) => total === 0 ? 0 : Math.round((n / total) * 100);
 
   const ncrTypeCounts = useMemo(() => {
-    const c: Record<string, number> = { 'NC-Major': 0, 'NC-Minor': 0, 'OBS': 0 };
+    const c: Record<string, number> = { 'NC-Major': 0, 'NC-Minor': 0, 'OBS': 0, 'OFI': 0 };
     for (const ncr of filteredNcrs) if (ncr.ncrType) c[ncr.ncrType]++;
     return c;
   }, [filteredNcrs]);
@@ -274,7 +276,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Summary Cards ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs font-medium text-slate-500 mb-1">Total Controls</p>
           <p className="text-3xl font-bold text-slate-900">{total}</p>
@@ -289,6 +291,11 @@ export default function DashboardPage() {
           <p className="text-xs font-medium text-blue-600 mb-1">OBS</p>
           <p className="text-3xl font-bold text-blue-700">{statusCounts['OBS']}</p>
           <p className="text-xs text-blue-500 mt-1">{pct(statusCounts['OBS'])}% of total</p>
+        </div>
+        <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+          <p className="text-xs font-medium text-amber-600 mb-1">OFI</p>
+          <p className="text-3xl font-bold text-amber-700">{statusCounts['OFI']}</p>
+          <p className="text-xs text-amber-500 mt-1">{pct(statusCounts['OFI'])}% of total</p>
         </div>
         <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
           <p className="text-xs font-medium text-orange-600 mb-1">NC Minor</p>

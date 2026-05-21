@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { AuditPlan, ChecklistItem, CorrectiveAction, CorrectiveActionStatus, FindingStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, CorrectiveAction, CorrectiveActionStatus, FindingStatus, PlanSession } from '@/lib/types';
 import {
   getAuditPlans,
   getChecklistItems,
   getCorrectiveActions,
+  getPlanSessions,
   saveCorrectiveAction,
   deleteCorrectiveAction,
-  computeSessionProgress,
   uid,
 } from '@/lib/store';
 import StatusBadge, { FINDING_STATUSES } from '@/components/StatusBadge';
@@ -99,6 +99,7 @@ export default function DashboardPage() {
   // ── State ─────────────────────────────────────────────────────────────────
 
   const [plans, setPlans]               = useState<AuditPlan[]>([]);
+  const [sessions, setSessions]         = useState<PlanSession[]>([]);
   const [items, setItems]               = useState<ChecklistItem[]>([]);
   const [cas, setCas]                   = useState<CorrectiveAction[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('all');
@@ -117,12 +118,14 @@ export default function DashboardPage() {
     setLoading(true);
     setDbError(null);
     try {
-      const [ps, is, actions] = await Promise.all([
+      const [ps, sess, is, actions] = await Promise.all([
         getAuditPlans(),
+        getPlanSessions(),   // all sessions — needed to resolve sessionId → planId
         getChecklistItems(),
         getCorrectiveActions(),
       ]);
       setPlans(ps);
+      setSessions(sess);
       setItems(is);
       setCas(actions);
     } catch (e) {
@@ -136,10 +139,24 @@ export default function DashboardPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  // Map planId → Set of plan_sessions.id that belong to it.
+  // ChecklistItem.sessionId may be either audit_plans.id (when saved with no sub-session
+  // selected) or plan_sessions.id (when a specific day/slot was selected in Checklist page).
+  // Both cases must be covered when filtering by plan.
+  const planSessionIdSet = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const s of sessions) {
+      if (!map.has(s.planId)) map.set(s.planId, new Set());
+      map.get(s.planId)!.add(s.id);
+    }
+    return map;
+  }, [sessions]);
+
   const filteredItems = useMemo(() => {
     if (selectedPlanId === 'all') return items;
-    return items.filter(i => i.sessionId === selectedPlanId);
-  }, [items, selectedPlanId]);
+    const sids = planSessionIdSet.get(selectedPlanId) ?? new Set<string>();
+    return items.filter(i => i.sessionId === selectedPlanId || sids.has(i.sessionId));
+  }, [items, selectedPlanId, planSessionIdSet]);
 
   // NCRs = CorrectiveActions that have ncrType defined (created from NCR panel)
   const filteredNcrs = useMemo(() => {
@@ -355,15 +372,18 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {plans.map(p => {
-                const prog = computeSessionProgress(items, p.id);
+                const sids = planSessionIdSet.get(p.id) ?? new Set<string>();
+                const relevant = items.filter(i => i.sessionId === p.id || sids.has(i.sessionId));
+                const assessed = relevant.filter(i => i.status !== 'Not Assessed').length;
+                const pct = relevant.length === 0 ? 0 : Math.round((assessed / relevant.length) * 100);
                 return (
                   <div key={p.id}>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="font-medium text-slate-700 truncate max-w-[140px]">{p.objective}</span>
-                      <span className="text-slate-500 flex-shrink-0">{prog.pct}%</span>
+                      <span className="text-slate-500 flex-shrink-0">{pct}%</span>
                     </div>
                     <div className="w-full bg-slate-100 rounded-full h-2">
-                      <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${prog.pct}%` }} />
+                      <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="mt-1">
                       <StatusBadge status={p.status} type="session" size="sm" />

@@ -147,10 +147,6 @@ export const ISO27001_CLAUSES: ClauseTemplate[] = [
   { clauseRef: 'A.8.32', clauseTitle: 'Change management', framework: 'ISO27001', requirement: 'Changes to information processing facilities and information systems shall be subject to change management procedures.' },
   { clauseRef: 'A.8.33', clauseTitle: 'Test information', framework: 'ISO27001', requirement: 'Test information shall be appropriately selected, protected and managed.' },
   { clauseRef: 'A.8.34', clauseTitle: 'Protection of information systems during audit testing', framework: 'ISO27001', requirement: 'Audit tests and other assurance activities involving assessment of operational systems shall be planned and agreed between the tester and appropriate management.' },
-
-  // A.10 Cryptography
-  { clauseRef: 'A.10.1', clauseTitle: 'Policy on the use of cryptographic controls', framework: 'ISO27001', requirement: 'A policy on the use of cryptographic controls for protection of information shall be developed and implemented.' },
-  { clauseRef: 'A.10.2', clauseTitle: 'Key management', framework: 'ISO27001', requirement: 'A policy on the use, protection and lifetime of cryptographic keys shall be developed and implemented through their whole lifecycle.' },
 ];
 
 export const NIST_CSF_CLAUSES: ClauseTemplate[] = [
@@ -176,12 +172,32 @@ export function getClausesByFramework(framework: 'ISO27001' | 'NIST_CSF') {
   return ALL_CLAUSES.filter(c => c.framework === framework);
 }
 
+// ── ISO 27001:2022 group labels ───────────────────────────────────────────────
+// Groups are returned in this order when framework === 'ISO27001'.
+export const ISO27001_GROUP_ORDER = [
+  'ISMS Requirements (Clause 4–10)',
+  'Organizational Controls (A.5)',
+  'People Controls (A.6)',
+  'Physical Controls (A.7)',
+  'Technological Controls (A.8)',
+] as const;
+
+export type Iso27001Group = typeof ISO27001_GROUP_ORDER[number];
+
+function isoGroupLabel(clauseRef: string): Iso27001Group {
+  if (clauseRef.startsWith('A.5')) return 'Organizational Controls (A.5)';
+  if (clauseRef.startsWith('A.6')) return 'People Controls (A.6)';
+  if (clauseRef.startsWith('A.7')) return 'Physical Controls (A.7)';
+  if (clauseRef.startsWith('A.8')) return 'Technological Controls (A.8)';
+  return 'ISMS Requirements (Clause 4–10)';
+}
+
 export function getClauseGroups(framework: 'ISO27001' | 'NIST_CSF'): Record<string, ClauseTemplate[]> {
   const clauses = getClausesByFramework(framework);
   const groups: Record<string, ClauseTemplate[]> = {};
   for (const clause of clauses) {
     const group = framework === 'ISO27001'
-      ? clause.clauseRef.split('.').slice(0, 2).join('.')
+      ? isoGroupLabel(clause.clauseRef)
       : clause.clauseRef.split('-')[0];
     if (!groups[group]) groups[group] = [];
     groups[group].push(clause);

@@ -25,6 +25,7 @@ export default function Navbar() {
     { href: '/audit-plan', label: 'Audit Plan', visible: true },
     { href: '/checklist',  label: 'Checklist',  visible: loading || canSeeChecklist },
     { href: '/dashboard',  label: 'Dashboard',  visible: true },
+    { href: '/report',     label: 'Report',     visible: true },
   ];
 
   if (pathname === '/login' || pathname.startsWith('/auth/')) return null;

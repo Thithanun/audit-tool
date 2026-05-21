@@ -34,6 +34,7 @@ export interface AuditPlan {
   endDate: string;
   status: SessionStatus;
   createdAt: string;
+  reportSignatures?: ReportSignatures; // stored in data JSONB — no DB migration needed
 }
 
 // Backward-compat alias used by Checklist and Dashboard
@@ -104,4 +105,16 @@ export interface ClauseTemplate {
   clauseTitle: string;
   framework: Framework;
   requirement: string;
+}
+
+// ── Management Report ─────────────────────────────────────────────────────────
+
+export interface ReportSignature {
+  sigData: string;   // base64 PNG data URL of the drawn signature
+  signedAt: string;  // ISO timestamp
+}
+
+export interface ReportSignatures {
+  leadAuditor?: ReportSignature;
+  management?: ReportSignature;
 }

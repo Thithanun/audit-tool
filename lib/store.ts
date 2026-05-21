@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, Standard,
+  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, ReportSignatures, Standard,
 } from './types';
 
 export function uid(): string {
@@ -134,6 +134,16 @@ export async function deleteAuditPlan(id: string): Promise<void> {
 }
 
 export const deleteSession = deleteAuditPlan;
+
+/** Persist digital signatures for a Management Report without overwriting other plan fields. */
+export async function saveReportSignatures(
+  planId: string,
+  signatures: ReportSignatures,
+): Promise<void> {
+  const plan = await getAuditPlanById(planId);
+  if (!plan) throw new Error(`Audit plan ${planId} not found`);
+  await saveAuditPlan({ ...plan, reportSignatures: signatures });
+}
 
 // ── Plan Sessions ─────────────────────────────────────────────────────────────
 

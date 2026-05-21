@@ -135,6 +135,13 @@ export async function deleteAuditPlan(id: string): Promise<void> {
 
 export const deleteSession = deleteAuditPlan;
 
+/** Stamp the "issued at" timestamp when an auditor clicks Create Report. */
+export async function saveReportIssuedAt(planId: string, issuedAt: string): Promise<void> {
+  const plan = await getAuditPlanById(planId);
+  if (!plan) throw new Error(`Audit plan ${planId} not found`);
+  await saveAuditPlan({ ...plan, reportIssuedAt: issuedAt });
+}
+
 /** Persist digital signatures for a Management Report without overwriting other plan fields. */
 export async function saveReportSignatures(
   planId: string,

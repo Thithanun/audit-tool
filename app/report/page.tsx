@@ -5,6 +5,7 @@ import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures } f
 import {
   getAuditPlans,
   getCorrectiveActions,
+  saveReportIssuedAt,
   saveReportSignatures,
 } from '@/lib/store';
 import PageLoader, { DbError } from '@/components/PageLoader';
@@ -35,19 +36,16 @@ function formatThaiTs(iso: string): string {
 }
 
 function reportNumber(plan: AuditPlan, idx: number): string {
-  const year = plan.createdAt
-    ? new Date(plan.createdAt).getFullYear()
-    : new Date().getFullYear();
+  const year = plan.reportIssuedAt
+    ? new Date(plan.reportIssuedAt).getFullYear()
+    : plan.createdAt
+      ? new Date(plan.createdAt).getFullYear()
+      : new Date().getFullYear();
   return `RPT-${year}-${String(idx + 1).padStart(3, '0')}`;
 }
 
-const NCR_TYPE_ORDER: Record<ReportNcrType, number> = {
-  'NC-Major': 0,
-  'NC-Minor': 1,
-  'OBS':      2,
-};
+const NCR_TYPE_ORDER: Record<ReportNcrType, number> = { 'NC-Major': 0, 'NC-Minor': 1, 'OBS': 2 };
 
-// Badge pill styling per type
 const BADGE_CLASS: Record<ReportNcrType, string> = {
   'NC-Major': 'bg-red-100 text-red-700 border border-red-200',
   'NC-Minor': 'bg-amber-100 text-amber-800 border border-amber-200',
@@ -60,11 +58,11 @@ const NCR_LABEL: Record<ReportNcrType, string> = {
   'OBS':      'Observation',
 };
 
-// Left border accent colour per type (Tailwind border-l-4 + colour)
-const CARD_ACCENT: Record<ReportNcrType, string> = {
-  'NC-Major': 'border-l-red-500',
-  'NC-Minor': 'border-l-orange-400',
-  'OBS':      'border-l-blue-400',
+// Card left-border accent + subtle background tint per type
+const CARD_STYLE: Record<ReportNcrType, { border: string; bg: string }> = {
+  'NC-Major': { border: 'border-l-red-500',    bg: 'bg-red-50/40' },
+  'NC-Minor': { border: 'border-l-orange-400', bg: 'bg-amber-50/50' },
+  'OBS':      { border: 'border-l-blue-400',   bg: 'bg-blue-50/40' },
 };
 
 // ── Signature Canvas Modal ────────────────────────────────────────────────────
@@ -89,19 +87,19 @@ function SigModal({ open, onConfirm, onClose }: SigModalProps) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    function pos(clientX: number, clientY: number) {
+    function getPos(cx: number, cy: number) {
       const r = canvas!.getBoundingClientRect();
       return {
-        x: (clientX - r.left) * (canvas!.width  / r.width),
-        y: (clientY - r.top)  * (canvas!.height / r.height),
+        x: (cx - r.left) * (canvas!.width  / r.width),
+        y: (cy - r.top)  * (canvas!.height / r.height),
       };
     }
 
-    const onDown  = (e: MouseEvent) => { drawing.current = true; const p = pos(e.clientX, e.clientY); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-    const onMove  = (e: MouseEvent) => { if (!drawing.current) return; const p = pos(e.clientX, e.clientY); ctx.lineTo(p.x, p.y); ctx.stroke(); };
-    const onUp    = () => { drawing.current = false; };
-    const onTouchStart = (e: TouchEvent) => { e.preventDefault(); drawing.current = true; const p = pos(e.touches[0].clientX, e.touches[0].clientY); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-    const onTouchMove  = (e: TouchEvent) => { e.preventDefault(); if (!drawing.current) return; const p = pos(e.touches[0].clientX, e.touches[0].clientY); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+    const onDown  = (e: MouseEvent)  => { drawing.current = true; const p = getPos(e.clientX, e.clientY); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const onMove  = (e: MouseEvent)  => { if (!drawing.current) return; const p = getPos(e.clientX, e.clientY); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+    const onUp    = ()               => { drawing.current = false; };
+    const onTouchStart = (e: TouchEvent) => { e.preventDefault(); drawing.current = true;  const p = getPos(e.touches[0].clientX, e.touches[0].clientY); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const onTouchMove  = (e: TouchEvent) => { e.preventDefault(); if (!drawing.current) return; const p = getPos(e.touches[0].clientX, e.touches[0].clientY); ctx.lineTo(p.x, p.y); ctx.stroke(); };
 
     canvas.addEventListener('mousedown',  onDown);
     canvas.addEventListener('mousemove',  onMove);
@@ -129,8 +127,8 @@ function SigModal({ open, onConfirm, onClose }: SigModalProps) {
   function confirm() {
     const c = canvasRef.current;
     if (!c) return;
-    const isEmpty = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.every(v => v === 0);
-    if (isEmpty) { alert('กรุณาวาดลายเซ็นก่อนยืนยัน'); return; }
+    const empty = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.every(v => v === 0);
+    if (empty) { alert('กรุณาวาดลายเซ็นก่อนยืนยัน'); return; }
     onConfirm(c.toDataURL('image/png'));
     clearCanvas();
   }
@@ -151,16 +149,10 @@ function SigModal({ open, onConfirm, onClose }: SigModalProps) {
           className="w-full rounded-xl border border-slate-200 bg-slate-50 cursor-crosshair block"
           style={{ touchAction: 'none' }}
         />
-        <div className="flex items-center gap-2 mt-4 justify-end">
-          <button onClick={clearCanvas} className="text-sm text-slate-500 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-            ล้าง
-          </button>
-          <button onClick={() => { clearCanvas(); onClose(); }} className="text-sm text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-            ยกเลิก
-          </button>
-          <button onClick={confirm} className="text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
-            ✓ ยืนยันลายเซ็น
-          </button>
+        <div className="flex gap-2 mt-4 justify-end">
+          <button onClick={clearCanvas} className="text-sm text-slate-500 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">ล้าง</button>
+          <button onClick={() => { clearCanvas(); onClose(); }} className="text-sm text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">ยกเลิก</button>
+          <button onClick={confirm} className="text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">✓ ยืนยันลายเซ็น</button>
         </div>
       </div>
     </div>
@@ -193,36 +185,18 @@ function SigBox({ sig, canSign, onSign, onClear }: SigBoxProps) {
   const signed = !!sig;
 
   return (
-    <div className={`rounded-xl border p-5 flex flex-col items-center gap-4 transition-colors ${
-      signed ? 'bg-green-50 border-green-300' : 'bg-white border-slate-200'
-    }`}>
-      {/* Preview canvas */}
+    <div className={`rounded-xl border p-5 flex flex-col items-center gap-4 transition-colors ${signed ? 'bg-green-50 border-green-300' : 'bg-white border-slate-200'}`}>
       <canvas
         ref={previewRef}
         width={340} height={80}
-        className={`w-full max-w-sm rounded-lg border ${
-          signed ? 'border-green-200 bg-green-50/60' : 'border-dashed border-slate-300 bg-slate-50'
-        }`}
+        className={`w-full max-w-sm rounded-lg border ${signed ? 'border-green-200 bg-green-50/60' : 'border-dashed border-slate-300 bg-slate-50'}`}
       />
-
-      {/* Sign / clear buttons */}
       {canSign && (
         <div className="flex gap-2">
-          <button
-            onClick={onSign}
-            className="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors text-slate-700 font-medium"
-          >
-            ✏️ ลงนาม
-          </button>
-          {signed && (
-            <button onClick={onClear} className="text-sm text-slate-400 hover:text-red-500 transition-colors px-2">
-              ล้าง
-            </button>
-          )}
+          <button onClick={onSign} className="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors text-slate-700 font-medium">✏️ ลงนาม</button>
+          {signed && <button onClick={onClear} className="text-sm text-slate-400 hover:text-red-500 transition-colors px-2">ล้าง</button>}
         </div>
       )}
-
-      {/* Name / role / timestamp */}
       <div className="text-center">
         <p className="text-sm font-semibold text-slate-800">Management Committee</p>
         <p className="text-xs text-slate-500 mt-0.5">คณะกรรมการบริหาร</p>
@@ -247,29 +221,30 @@ interface FindingCardProps {
 
 function FindingCard({ finding: f, findingId }: FindingCardProps) {
   const t = f.ncrType as ReportNcrType;
+  const { border, bg } = CARD_STYLE[t];
 
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 border-l-4 overflow-hidden ${CARD_ACCENT[t]}`}>
+    <div className={`rounded-xl border border-slate-200 border-l-4 overflow-hidden ${border} ${bg}`}>
 
-      {/* ── Card header ──────────────────────────────────────────────────── */}
-      <div className="px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 flex items-start justify-between gap-4">
+      {/* Header: left = ID + description, right = type badge + clause badge */}
+      <div className="px-5 py-3.5 border-b border-black/5 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="font-mono text-xs text-slate-400">{findingId}</span>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_CLASS[t]}`}>
-              {NCR_LABEL[t]}
-            </span>
-          </div>
+          <p className="font-mono text-xs text-slate-400 mb-1">{findingId}</p>
           <p className="text-sm font-medium text-slate-800 leading-snug">{f.description}</p>
         </div>
-        {f.clauseRef && (
-          <span className="font-mono text-xs text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded-md shrink-0">
-            {f.clauseRef}
+        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_CLASS[t]}`}>
+            {NCR_LABEL[t]}
           </span>
-        )}
+          {f.clauseRef && (
+            <span className="font-mono text-xs text-slate-500 bg-white/80 border border-slate-200 px-2 py-0.5 rounded-md">
+              {f.clauseRef}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ── Card body — 2 columns ─────────────────────────────────────────── */}
+      {/* Body: 2-column — ผลกระทบ | ข้อเสนอแนะ */}
       <div className="px-5 py-4 grid grid-cols-2 gap-5">
         <div>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">ผลกระทบ</p>
@@ -281,19 +256,19 @@ function FindingCard({ finding: f, findingId }: FindingCardProps) {
         </div>
       </div>
 
-      {/* ── Correction plan (shown only if auditee has submitted) ────────── */}
+      {/* Optional correction plan row (shown only when auditee has submitted) */}
       {(f.rootCause || f.correctiveAction || f.preventiveAction) && (
-        <div className="px-5 pb-4 pt-0 border-t border-slate-100 grid grid-cols-3 gap-4 mt-0">
-          <div className="pt-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">วิเคราะห์สาเหตุ</p>
+        <div className="px-5 pb-4 border-t border-black/5 grid grid-cols-3 gap-4 pt-3">
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">วิเคราะห์สาเหตุ</p>
             <p className="text-xs text-slate-600 leading-relaxed">{f.rootCause || '—'}</p>
           </div>
-          <div className="pt-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">แนวทางแก้ไข</p>
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">แนวทางแก้ไข</p>
             <p className="text-xs text-slate-600 leading-relaxed">{f.correctiveAction || '—'}</p>
           </div>
-          <div className="pt-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">แนวทางป้องกัน</p>
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">แนวทางป้องกัน</p>
             <p className="text-xs text-slate-600 leading-relaxed">{f.preventiveAction || '—'}</p>
           </div>
         </div>
@@ -313,9 +288,10 @@ export default function ReportPage() {
   const [loading, setLoading]               = useState(false);
   const [dbError, setDbError]               = useState<string | null>(null);
 
-  const [signatures, setSignatures] = useState<ReportSignatures>({});
-  const [sigSaving, setSigSaving]   = useState(false);
-  const [modalOpen, setModalOpen]   = useState(false);
+  const [signatures, setSignatures]         = useState<ReportSignatures>({});
+  const [sigSaving, setSigSaving]           = useState(false);
+  const [sigModalOpen, setSigModalOpen]     = useState(false);
+  const [creating, setCreating]             = useState(false);
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -338,12 +314,15 @@ export default function ReportPage() {
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
-  const selectedPlan = useMemo(() => plans.find(p => p.id === selectedPlanId) ?? null, [plans, selectedPlanId]);
-  const selectedPlanIdx = useMemo(() => plans.findIndex(p => p.id === selectedPlanId), [plans, selectedPlanId]);
+  const selectedPlan    = useMemo(() => plans.find(p => p.id === selectedPlanId) ?? null, [plans, selectedPlanId]);
+  const selectedPlanIdx = useMemo(() => plans.findIndex(p => p.id === selectedPlanId),    [plans, selectedPlanId]);
 
+  // Sync signatures and issuedAt from the selected plan
   useEffect(() => {
     setSignatures(selectedPlan?.reportSignatures ?? {});
   }, [selectedPlan]);
+
+  const issuedAt = selectedPlan?.reportIssuedAt ?? null; // null = report not yet created
 
   // Findings: NCRs for this plan, OFI excluded, sorted by severity
   const findings = useMemo(() => {
@@ -359,23 +338,41 @@ export default function ReportPage() {
     return c;
   }, [findings]);
 
-  // Sequential IDs per type (NCR-YYYY-001 / OBS-YYYY-001)
+  // Sequential IDs per type: NCR-YYYY-001 for NC-Major/NC-Minor, OBS-YYYY-001 for OBS
   const findingIds = useMemo(() => {
-    const year = selectedPlan?.createdAt ? new Date(selectedPlan.createdAt).getFullYear() : new Date().getFullYear();
+    const year = issuedAt
+      ? new Date(issuedAt).getFullYear()
+      : selectedPlan?.createdAt
+        ? new Date(selectedPlan.createdAt).getFullYear()
+        : new Date().getFullYear();
     const ctr: Record<ReportNcrType, number> = { 'NC-Major': 0, 'NC-Minor': 0, 'OBS': 0 };
     return findings.map(f => {
       const t = f.ncrType as ReportNcrType;
       ctr[t]++;
       return `${t === 'OBS' ? 'OBS' : 'NCR'}-${year}-${String(ctr[t]).padStart(3, '0')}`;
     });
-  }, [findings, selectedPlan]);
+  }, [findings, issuedAt, selectedPlan]);
 
-  const isSigned = !!signatures.management;
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
-  // ── Signature handlers ─────────────────────────────────────────────────────
+  async function handleCreateReport() {
+    if (!selectedPlanId) return;
+    setCreating(true);
+    try {
+      const now = new Date().toISOString();
+      await saveReportIssuedAt(selectedPlanId, now);
+      // Refresh plans so selectedPlan reflects the new issuedAt
+      const updated = await (await import('@/lib/store')).getAuditPlans();
+      setPlans(updated);
+    } catch (err) {
+      alert('ไม่สามารถสร้างรายงานได้: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function handleSigConfirm(dataUrl: string) {
-    setModalOpen(false);
+    setSigModalOpen(false);
     const updated: ReportSignatures = {
       ...signatures,
       management: { sigData: dataUrl, signedAt: new Date().toISOString() },
@@ -413,14 +410,17 @@ export default function ReportPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  const reportCreated = !!issuedAt;
+
   return (
     <>
-      <SigModal open={modalOpen} onConfirm={handleSigConfirm} onClose={() => setModalOpen(false)} />
+      <SigModal open={sigModalOpen} onConfirm={handleSigConfirm} onClose={() => setSigModalOpen(false)} />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {/* ── Toolbar ────────────────────────────────────────────────────────── */}
+        {/* ── Top bar ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
+          {/* Left: plan dropdown */}
           <div className="flex items-center gap-3">
             <label className="text-xs font-medium text-slate-500">Audit Plan</label>
             <select
@@ -432,25 +432,76 @@ export default function ReportPage() {
               {plans.map(p => <option key={p.id} value={p.id}>{p.objective}</option>)}
             </select>
           </div>
+
+          {/* Right: Create Report → Export PDF */}
           <div className="flex items-center gap-3">
             {sigSaving && <span className="text-xs text-slate-400 animate-pulse">กำลังบันทึก…</span>}
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M6.75 15.75H5.25A2.25 2.25 0 013 13.5V9a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 9v4.5a2.25 2.25 0 01-2.25 2.25H17.25m-10.5 0v4.5h10.5v-4.5m-10.5 0h10.5M6.75 7.5V3.75h10.5V7.5" />
-              </svg>
-              พิมพ์ / Export PDF
-            </button>
+
+            {reportCreated ? (
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M6.75 15.75H5.25A2.25 2.25 0 013 13.5V9a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 9v4.5a2.25 2.25 0 01-2.25 2.25H17.25m-10.5 0v4.5h10.5v-4.5m-10.5 0h10.5M6.75 7.5V3.75h10.5V7.5" />
+                </svg>
+                Export PDF
+              </button>
+            ) : (
+              canEdit && selectedPlanId && (
+                <button
+                  onClick={handleCreateReport}
+                  disabled={creating}
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
+                >
+                  {creating ? (
+                    <span className="animate-pulse">กำลังสร้าง…</span>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                      </svg>
+                      Create Report
+                    </>
+                  )}
+                </button>
+              )
+            )}
           </div>
         </div>
 
-        {/* ── Report body ────────────────────────────────────────────────────── */}
-        {!selectedPlan ? (
-          <div className="text-center py-24 text-slate-400 text-sm">เลือก Audit Plan เพื่อดูรายงาน</div>
+        {/* ── Empty state (before Create Report) ───────────────────────────── */}
+        {!reportCreated ? (
+          <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-16 text-center">
+            <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+            </div>
+            <p className="text-base font-medium text-slate-700 mb-1">ยังไม่มีรายงาน</p>
+            <p className="text-sm text-slate-400 mb-6 max-w-xs mx-auto">
+              กด <span className="font-medium text-slate-600">Create Report</span> เพื่อออกรายงานและ stamp วันที่ออกรายงาน
+            </p>
+            {canEdit && selectedPlanId && (
+              <button
+                onClick={handleCreateReport}
+                disabled={creating}
+                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm px-5 py-2.5 rounded-lg transition-colors font-medium"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                {creating ? 'กำลังสร้าง…' : 'Create Report'}
+              </button>
+            )}
+            {!canEdit && (
+              <p className="text-xs text-slate-400 mt-2">Auditor จะต้องสร้างรายงานก่อน</p>
+            )}
+          </div>
         ) : (
+
+        /* ── Report body (after Create Report) ────────────────────────────── */
           <div id="report-printable" className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm space-y-8 print:shadow-none print:border-none print:rounded-none">
 
             {/* ── Report header ─────────────────────────────────────────────── */}
@@ -458,17 +509,17 @@ export default function ReportPage() {
               <div>
                 <h1 className="text-2xl font-medium text-slate-900">Management Report</h1>
                 <p className="text-sm text-slate-500 mt-1">
-                  {selectedPlan.objective} · {selectedPlan.standard}
+                  {selectedPlan!.objective} · {selectedPlan!.standard}
                 </p>
-                {selectedPlan.scope && (
-                  <p className="text-xs text-slate-400 mt-0.5">Scope: {selectedPlan.scope}</p>
+                {selectedPlan!.scope && (
+                  <p className="text-xs text-slate-400 mt-0.5">Scope: {selectedPlan!.scope}</p>
                 )}
               </div>
-              <div className="text-right text-xs text-slate-500 space-y-0.5 shrink-0">
-                <p className="font-semibold text-slate-800 text-sm">{reportNumber(selectedPlan, selectedPlanIdx)}</p>
-                <p>วันที่ออกรายงาน: {formatThai(new Date().toISOString())}</p>
-                <p>ผู้ตรวจ: {selectedPlan.leadAuditor || '—'}</p>
-                <p>ช่วงเวลา: {formatThai(selectedPlan.startDate)} – {formatThai(selectedPlan.endDate)}</p>
+              <div className="text-right text-xs text-slate-500 space-y-0.5 shrink-0 ml-6">
+                <p className="font-semibold text-slate-800 text-sm">{reportNumber(selectedPlan!, selectedPlanIdx)}</p>
+                <p>วันที่ออกรายงาน: <span className="text-slate-700 font-medium">{formatThai(issuedAt!)}</span></p>
+                <p>ผู้ตรวจ: {selectedPlan!.leadAuditor || '—'}</p>
+                <p>ช่วงเวลา: {formatThai(selectedPlan!.startDate)} – {formatThai(selectedPlan!.endDate)}</p>
               </div>
             </div>
 
@@ -510,17 +561,15 @@ export default function ReportPage() {
               )}
             </div>
 
-            {/* ── Signature section — Management Committee only ─────────────── */}
+            {/* ── Signature — Management Committee only ─────────────────────── */}
             <div className="border border-slate-200 rounded-xl p-6">
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">การรับทราบและอนุมัติ</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    คณะกรรมการบริหารประทับลายเซ็นดิจิทัลเพื่อรับทราบรายงาน
-                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">คณะกรรมการบริหารประทับลายเซ็นดิจิทัลเพื่อรับทราบรายงาน</p>
                 </div>
                 <div className="text-xs">
-                  {isSigned ? (
+                  {signatures.management ? (
                     <span className="text-green-700 font-medium flex items-center gap-1">
                       <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
@@ -533,12 +582,11 @@ export default function ReportPage() {
                 </div>
               </div>
 
-              {/* Single centred signature box */}
               <div className="max-w-sm mx-auto">
                 <SigBox
                   sig={signatures.management}
                   canSign={canEdit}
-                  onSign={() => setModalOpen(true)}
+                  onSign={() => setSigModalOpen(true)}
                   onClear={handleSigClear}
                 />
               </div>

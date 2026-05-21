@@ -34,6 +34,7 @@ export interface AuditPlan {
   endDate: string;
   status: SessionStatus;
   createdAt: string;
+  reportIssuedAt?: string;             // ISO timestamp stamped when "Create Report" is clicked
   reportSignatures?: ReportSignatures; // stored in data JSONB — no DB migration needed
 }
 

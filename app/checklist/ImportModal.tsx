@@ -33,12 +33,20 @@ function sessionShortLabel(s: PlanSession): string {
   return `Day ${s.day}${s.time ? ` · ${s.time}` : ''}`;
 }
 
-/** Normalise for fuzzy matching: lowercase, collapse whitespace, unify separators. */
+/** Normalise for fuzzy matching: lowercase, collapse whitespace, unify separators.
+ *  Handles Excel special chars vs plain ASCII stored in the database:
+ *  - Middle-dot variants  · • ‧ ⋅ ∙  → ·
+ *  - Dash variants        – — ‒ ―    → - (hyphen)
+ *  - Strips whitespace around both separators so
+ *    "14:00 – 15:00" and "14:00-15:00" both become "14:00-15:00"
+ */
 function norm(s: string): string {
   return s
     .toLowerCase()
-    .replace(/[·•]/g, '·')          // unify middle-dot variants
-    .replace(/\s*·\s*/g, '·')       // strip spaces around ·
+    .replace(/[·•‧⋅∙]/g, '·')       // unify middle-dot variants
+    .replace(/\s*·\s*/g, '·')        // strip spaces around ·
+    .replace(/[–—‒―]/g, '-')         // unify en-dash / em-dash → hyphen
+    .replace(/\s*-\s*/g, '-')        // strip spaces around hyphen ("14:00 - 15:00" → "14:00-15:00")
     .replace(/\s+/g, ' ')
     .trim();
 }

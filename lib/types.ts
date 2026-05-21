@@ -91,6 +91,12 @@ export interface CorrectiveAction {
   closureNotes: string;
   createdAt: string;
   updatedAt: string;
+  // NCR Management fields — optional, only present on standalone NCRs
+  ncrType?: 'NC-Major' | 'NC-Minor' | 'OBS'; // ประเภท NCR
+  impact?: string;            // ผลกระทบ (Auditor fills)
+  recommendation?: string;    // ข้อเสนอแนะ (Auditor fills)
+  correctiveAction?: string;  // แนวทางแก้ไข (Auditee fills)
+  preventiveAction?: string;  // แนวทางป้องกัน (Auditee fills)
 }
 
 export interface ClauseTemplate {

@@ -22,10 +22,10 @@ import PageLoader, { DbError } from '@/components/PageLoader';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const FINDING_STATUSES: FindingStatus[] = [
-  'Not Assessed', 'Conformity', 'OBS', 'OFI', 'NC-Minor', 'NC-Major',
+  'Not Assessed', 'Conformity', 'OBS', 'NC-Minor', 'NC-Major',
 ];
 
-const NEEDS_FINDING = new Set<FindingStatus>(['OBS', 'OFI', 'NC-Minor', 'NC-Major']);
+const NEEDS_FINDING = new Set<FindingStatus>(['OBS', 'NC-Minor', 'NC-Major']);
 
 const NIST_PREFIX = /^(GV|ID|PR|DE|RS|RC)\./;
 function isNistItem(item: ChecklistItem) {
@@ -783,7 +783,6 @@ export default function ChecklistPage() {
           {statusCounts['NC-Major'] > 0 && <span className="font-medium text-red-600">NC-Major: {statusCounts['NC-Major']}</span>}
           {statusCounts['NC-Minor'] > 0 && <span className="font-medium text-orange-700">NC-Minor: {statusCounts['NC-Minor']}</span>}
           {statusCounts['OBS'] > 0 && <span className="font-medium text-orange-600">OBS: {statusCounts['OBS']}</span>}
-          {statusCounts['OFI'] > 0 && <span className="font-medium text-blue-600">OFI: {statusCounts['OFI']}</span>}
         </div>
         <button
           onClick={handleExportExcel}

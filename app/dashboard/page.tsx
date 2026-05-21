@@ -311,8 +311,8 @@ export default function DashboardPage() {
         </div>
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
           <p className="text-xs font-medium text-amber-600 mb-1">OFI</p>
-          <p className="text-3xl font-bold text-amber-700">{statusCounts['OFI']}</p>
-          <p className="text-xs text-amber-500 mt-1">{pct(statusCounts['OFI'])}% of total</p>
+          <p className="text-3xl font-bold text-amber-700">{ncrTypeCounts['OFI'] ?? 0}</p>
+          <p className="text-xs text-amber-500 mt-1">NCR Management</p>
         </div>
         <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
           <p className="text-xs font-medium text-orange-600 mb-1">NC Minor</p>

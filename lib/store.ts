@@ -152,6 +152,14 @@ export async function saveReportSignatures(
   await saveAuditPlan({ ...plan, reportSignatures: signatures });
 }
 
+/** Remove the issued-at stamp and signatures — effectively "un-publishes" a Management Report. */
+export async function deleteReport(planId: string): Promise<void> {
+  const plan = await getAuditPlanById(planId);
+  if (!plan) throw new Error(`Audit plan ${planId} not found`);
+  // Setting optional fields to undefined causes toRow to omit them from JSONB
+  await saveAuditPlan({ ...plan, reportIssuedAt: undefined, reportSignatures: undefined });
+}
+
 // ── Plan Sessions ─────────────────────────────────────────────────────────────
 
 // Parse the start time of a session into minutes since midnight (for numeric sort).

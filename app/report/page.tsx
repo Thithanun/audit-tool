@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures } from '@/lib/types';
 import {
   getAuditPlans,
   getCorrectiveActions,
   saveReportIssuedAt,
   saveReportSignatures,
+  deleteReport,
 } from '@/lib/store';
 import PageLoader, { DbError } from '@/components/PageLoader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -280,7 +282,8 @@ function FindingCard({ finding: f, findingId }: FindingCardProps) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ReportPage() {
-  const { canEditDashboard: canEdit } = useAuth();
+  const { canEditDashboard: canEdit, isAdmin } = useAuth();
+  const router = useRouter();
 
   const [plans, setPlans]                   = useState<AuditPlan[]>([]);
   const [allCas, setAllCas]                 = useState<CorrectiveAction[]>([]);
@@ -292,6 +295,8 @@ export default function ReportPage() {
   const [sigSaving, setSigSaving]           = useState(false);
   const [sigModalOpen, setSigModalOpen]     = useState(false);
   const [creating, setCreating]             = useState(false);
+  const [deleteConfirm, setDeleteConfirm]   = useState(false);
+  const [deleting, setDeleting]             = useState(false);
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -403,6 +408,19 @@ export default function ReportPage() {
     }
   }
 
+  async function handleDeleteReport() {
+    if (!selectedPlanId) return;
+    setDeleting(true);
+    try {
+      await deleteReport(selectedPlanId);
+      setDeleteConfirm(false);
+      router.push('/audit-plan');
+    } catch (err) {
+      alert('ลบรายงานไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+      setDeleting(false);
+    }
+  }
+
   // ── Guard ──────────────────────────────────────────────────────────────────
 
   if (loading) return <PageLoader message="กำลังโหลด Management Report…" />;
@@ -415,6 +433,44 @@ export default function ReportPage() {
   return (
     <>
       <SigModal open={sigModalOpen} onConfirm={handleSigConfirm} onClose={() => setSigModalOpen(false)} />
+
+      {/* ── Delete Report confirmation dialog ──────────────────────────────── */}
+      {deleteConfirm && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget && !deleting) setDeleteConfirm(false); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 w-full max-w-sm">
+            <div className="w-11 h-11 bg-red-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            </div>
+            <h3 className="text-base font-semibold text-slate-900 text-center mb-1">ลบรายงานนี้ใช่หรือไม่?</h3>
+            <p className="text-sm text-slate-500 text-center mb-5">
+              การดำเนินการนี้จะลบวันที่ออกรายงานและลายเซ็นดิจิทัลทั้งหมด
+              <br />ข้อมูล NCR / Checklist จะยังคงอยู่
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleDeleteReport}
+                disabled={deleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {deleting ? 'กำลังลบ…' : 'ยืนยัน ลบรายงาน'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
@@ -438,16 +494,31 @@ export default function ReportPage() {
             {sigSaving && <span className="text-xs text-slate-400 animate-pulse">กำลังบันทึก…</span>}
 
             {reportCreated ? (
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M6.75 15.75H5.25A2.25 2.25 0 013 13.5V9a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 9v4.5a2.25 2.25 0 01-2.25 2.25H17.25m-10.5 0v4.5h10.5v-4.5m-10.5 0h10.5M6.75 7.5V3.75h10.5V7.5" />
-                </svg>
-                Export PDF
-              </button>
+              <>
+                {/* Admin-only: Delete Report */}
+                {isAdmin && (
+                  <button
+                    onClick={() => setDeleteConfirm(true)}
+                    className="flex items-center gap-1.5 border border-red-300 text-red-600 text-sm px-4 py-2 rounded-lg hover:bg-red-50 transition-colors font-medium"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                    Delete Report
+                  </button>
+                )}
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M6.75 15.75H5.25A2.25 2.25 0 013 13.5V9a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 9v4.5a2.25 2.25 0 01-2.25 2.25H17.25m-10.5 0v4.5h10.5v-4.5m-10.5 0h10.5M6.75 7.5V3.75h10.5V7.5" />
+                  </svg>
+                  Export PDF
+                </button>
+              </>
             ) : (
               canEdit && selectedPlanId && (
                 <button

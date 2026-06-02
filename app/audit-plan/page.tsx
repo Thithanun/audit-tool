@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import type { AuditPlan, ChecklistItem, SessionStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus } from '@/lib/types';
 import {
   getAuditPlans,
   getChecklistItems,
+  getPlanSessions,
   saveAuditPlan,
   deleteAuditPlan,
   bulkSaveChecklistItems,
-  computeSessionProgress,
   uid,
 } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
@@ -34,6 +34,7 @@ export default function AuditPlanListPage() {
   const { canEditAuditPlan: canEdit } = useAuth();
   const [plans, setPlans] = useState<AuditPlan[]>([]);
   const [allItems, setAllItems] = useState<ChecklistItem[]>([]);
+  const [sessions, setSessions] = useState<PlanSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -46,9 +47,10 @@ export default function AuditPlanListPage() {
     setLoading(true);
     setDbError(null);
     try {
-      const [ps, is] = await Promise.all([getAuditPlans(), getChecklistItems()]);
+      const [ps, is, ss] = await Promise.all([getAuditPlans(), getChecklistItems(), getPlanSessions()]);
       setPlans(ps);
       setAllItems(is);
+      setSessions(ss);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
@@ -58,11 +60,27 @@ export default function AuditPlanListPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  const planProgress = useMemo(() => {
-    const map: Record<string, { total: number; assessed: number; pct: number }> = {};
-    for (const p of plans) map[p.id] = computeSessionProgress(allItems, p.id);
+  // Build planId → Set<sessionId> so items created under sub-sessions are included.
+  const planSessionIdSet = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const s of sessions) {
+      if (!map.has(s.planId)) map.set(s.planId, new Set());
+      map.get(s.planId)!.add(s.id);
+    }
     return map;
-  }, [plans, allItems]);
+  }, [sessions]);
+
+  const planProgress = useMemo(() => {
+    const result: Record<string, { total: number; assessed: number; pct: number }> = {};
+    for (const p of plans) {
+      const sids = planSessionIdSet.get(p.id) ?? new Set<string>();
+      const relevant = allItems.filter(i => i.sessionId === p.id || sids.has(i.sessionId));
+      const assessed = relevant.filter(i => i.status !== 'Not Assessed').length;
+      const total = relevant.length;
+      result[p.id] = { total, assessed, pct: total === 0 ? 0 : Math.round((assessed / total) * 100) };
+    }
+    return result;
+  }, [plans, allItems, planSessionIdSet]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

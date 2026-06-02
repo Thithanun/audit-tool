@@ -225,56 +225,38 @@ function FindingCard({ finding: f, findingId }: FindingCardProps) {
   const t = f.ncrType as ReportNcrType;
   const { border, bg } = CARD_STYLE[t];
 
+  const rows: { label: string; content: string | undefined }[] = [
+    { label: 'ประเด็นที่ตรวจพบ', content: f.description },
+    { label: 'ผลกระทบ',          content: f.impact },
+    { label: 'ข้อเสนอแนะ',       content: f.recommendation },
+  ];
+
   return (
     <div className={`rounded-xl border border-slate-200 border-l-4 overflow-hidden ${border} ${bg}`}>
 
-      {/* Header: left = ID + description, right = type badge + clause badge */}
-      <div className="px-5 py-3.5 border-b border-black/5 flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="font-mono text-xs text-slate-400 mb-1">{findingId}</p>
-          <p className="text-sm font-medium text-slate-800 leading-snug">{f.description}</p>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_CLASS[t]}`}>
-            {NCR_LABEL[t]}
+      {/* ── Row 1: ID · type badge · clause badge ─────────────────────────── */}
+      <div className="px-5 py-3 flex items-center gap-2 flex-wrap border-b border-black/5">
+        <span className="font-mono text-xs font-bold text-slate-600 tracking-tight">{findingId}</span>
+        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${BADGE_CLASS[t]}`}>
+          {NCR_LABEL[t]}
+        </span>
+        {f.clauseRef && (
+          <span className="font-mono text-xs text-slate-500 bg-white/80 border border-slate-200 px-2 py-0.5 rounded-md">
+            {f.clauseRef}
           </span>
-          {f.clauseRef && (
-            <span className="font-mono text-xs text-slate-500 bg-white/80 border border-slate-200 px-2 py-0.5 rounded-md">
-              {f.clauseRef}
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Body: 2-column — ผลกระทบ | ข้อเสนอแนะ */}
-      <div className="px-5 py-4 grid grid-cols-2 gap-5">
-        <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">ผลกระทบ</p>
-          <p className="text-sm text-slate-700 leading-relaxed">{f.impact || '—'}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">ข้อเสนอแนะ</p>
-          <p className="text-sm text-slate-700 leading-relaxed">{f.recommendation || '—'}</p>
-        </div>
+      {/* ── Rows 2–4: label + content, each separated by a divider ────────── */}
+      <div className="divide-y divide-black/5">
+        {rows.map(({ label, content }) => (
+          <div key={label} className="px-5 py-3.5">
+            <p className="text-xs font-semibold text-slate-500 mb-1.5">{label}</p>
+            <p className="text-sm text-slate-800 leading-relaxed">{content || '—'}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Optional correction plan row (shown only when auditee has submitted) */}
-      {(f.rootCause || f.correctiveAction || f.preventiveAction) && (
-        <div className="px-5 pb-4 border-t border-black/5 grid grid-cols-3 gap-4 pt-3">
-          <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">วิเคราะห์สาเหตุ</p>
-            <p className="text-xs text-slate-600 leading-relaxed">{f.rootCause || '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">แนวทางแก้ไข</p>
-            <p className="text-xs text-slate-600 leading-relaxed">{f.correctiveAction || '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">แนวทางป้องกัน</p>
-            <p className="text-xs text-slate-600 leading-relaxed">{f.preventiveAction || '—'}</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

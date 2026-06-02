@@ -429,8 +429,6 @@ export default function ReportPage() {
   const [deleteConfirm, setDeleteConfirm]   = useState(false);
   const [deleting, setDeleting]             = useState(false);
   const [editModalOpen, setEditModalOpen]   = useState(false);
-  const [approveConfirm, setApproveConfirm] = useState(false);
-  const [approving, setApproving]           = useState(false);
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -461,9 +459,11 @@ export default function ReportPage() {
     setSignatures(selectedPlan?.reportSignatures ?? {});
   }, [selectedPlan]);
 
-  const issuedAt     = selectedPlan?.reportIssuedAt ?? null; // null = report not yet created
-  const reportStatus: ReportStatus = selectedPlan?.reportStatus ?? 'draft';
-  const isApproved   = reportStatus === 'approved';
+  const issuedAt = selectedPlan?.reportIssuedAt ?? null; // null = report not yet created
+  // Approved when the DB status field says so OR a management signature exists.
+  // Checking local `signatures` gives immediate button feedback without waiting for a DB refresh.
+  const reportStatus: ReportStatus = (selectedPlan?.reportStatus ?? 'draft') as ReportStatus;
+  const isApproved = reportStatus === 'approved' || !!signatures.management;
 
   // Findings: NCRs for this plan, OFI excluded, sorted by severity
   const findings = useMemo(() => {
@@ -518,11 +518,18 @@ export default function ReportPage() {
       ...signatures,
       management: { sigData: dataUrl, signedAt: new Date().toISOString() },
     };
-    setSignatures(updated);
+    setSignatures(updated); // immediate local feedback — isApproved flips instantly
     if (!selectedPlanId) return;
     setSigSaving(true);
     try {
-      await saveReportSignatures(selectedPlanId, updated);
+      // Save signature, then auto-approve: both writes in parallel
+      await Promise.all([
+        saveReportSignatures(selectedPlanId, updated),
+        saveReportStatus(selectedPlanId, 'approved'),
+      ]);
+      // Refresh plans so reportStatus reflects 'approved' on next render
+      const refreshed = await getAuditPlans();
+      setPlans(refreshed);
     } catch (err) {
       alert('บันทึกลายเซ็นไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -532,11 +539,17 @@ export default function ReportPage() {
 
   async function handleSigClear() {
     const updated: ReportSignatures = { ...signatures, management: undefined };
-    setSignatures(updated);
+    setSignatures(updated); // immediate local feedback — isApproved flips back instantly
     if (!selectedPlanId) return;
     setSigSaving(true);
     try {
-      await saveReportSignatures(selectedPlanId, updated);
+      // Remove signature and revert status to draft in parallel
+      await Promise.all([
+        saveReportSignatures(selectedPlanId, updated),
+        saveReportStatus(selectedPlanId, 'draft'),
+      ]);
+      const refreshed = await getAuditPlans();
+      setPlans(refreshed);
     } catch (err) {
       alert('ลบลายเซ็นไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -554,21 +567,6 @@ export default function ReportPage() {
     } catch (err) {
       alert('ลบรายงานไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
       setDeleting(false);
-    }
-  }
-
-  async function handleApprove() {
-    if (!selectedPlanId) return;
-    setApproving(true);
-    try {
-      await saveReportStatus(selectedPlanId, 'approved');
-      const refreshed = await getAuditPlans();
-      setPlans(refreshed);
-      setApproveConfirm(false);
-    } catch (err) {
-      alert('อนุมัติไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setApproving(false);
     }
   }
 
@@ -600,38 +598,6 @@ export default function ReportPage() {
           onClose={() => setEditModalOpen(false)}
           onSaved={handleReportSaved}
         />
-      )}
-
-      {/* ── Approve confirmation dialog ────────────────────────────────────── */}
-      {approveConfirm && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={e => { if (e.target === e.currentTarget && !approving) setApproveConfirm(false); }}
-        >
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 w-full max-w-sm">
-            <div className="w-11 h-11 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-base font-semibold text-slate-900 text-center mb-1">อนุมัติรายงานนี้?</h3>
-            <p className="text-sm text-slate-500 text-center mb-5">
-              เมื่ออนุมัติแล้ว รายงานจะถูกล็อก<br />
-              ไม่สามารถแก้ไขหรือลบได้อีก
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setApproveConfirm(false)} disabled={approving}
-                className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors">
-                ยกเลิก
-              </button>
-              <button onClick={handleApprove} disabled={approving}
-                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors">
-                {approving ? 'กำลังอนุมัติ…' : '✓ ยืนยัน อนุมัติ'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ── Delete Report confirmation dialog ──────────────────────────────── */}
@@ -725,19 +691,6 @@ export default function ReportPage() {
                       Edit Report
                     </button>
 
-                    {/* Approve — shown only when not yet approved */}
-                    {!isApproved && (
-                      <button
-                        onClick={() => setApproveConfirm(true)}
-                        className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                            d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Approve
-                      </button>
-                    )}
                   </>
                 )}
 

@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, ReportSignatures, Standard,
+  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, ReportSignatures, ReportStatus, Standard,
 } from './types';
 
 export function uid(): string {
@@ -150,6 +150,13 @@ export async function saveReportSignatures(
   const plan = await getAuditPlanById(planId);
   if (!plan) throw new Error(`Audit plan ${planId} not found`);
   await saveAuditPlan({ ...plan, reportSignatures: signatures });
+}
+
+/** Change the workflow status of a Management Report (draft → in_review → approved). */
+export async function saveReportStatus(planId: string, status: ReportStatus): Promise<void> {
+  const plan = await getAuditPlanById(planId);
+  if (!plan) throw new Error(`Audit plan ${planId} not found`);
+  await saveAuditPlan({ ...plan, reportStatus: status });
 }
 
 /** Remove the issued-at stamp and signatures — effectively "un-publishes" a Management Report. */

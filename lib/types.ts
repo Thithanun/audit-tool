@@ -23,6 +23,8 @@ export type SessionStatus = 'Planned' | 'In Progress' | 'Completed';
 
 export type CorrectiveActionStatus = 'Open' | 'In Progress' | 'Closed' | 'Overdue';
 
+export type ReportStatus = 'draft' | 'in_review' | 'approved';
+
 export interface AuditPlan {
   id: string;
   objective: string;
@@ -36,6 +38,7 @@ export interface AuditPlan {
   createdAt: string;
   reportIssuedAt?: string;             // ISO timestamp stamped when "Create Report" is clicked
   reportSignatures?: ReportSignatures; // stored in data JSONB — no DB migration needed
+  reportStatus?: ReportStatus;         // draft | in_review | approved — default "draft" when absent
 }
 
 // Backward-compat alias used by Checklist and Dashboard

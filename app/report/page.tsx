@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures } from '@/lib/types';
+import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures, ReportStatus } from '@/lib/types';
 import {
   getAuditPlans,
   getCorrectiveActions,
+  saveAuditPlan,
   saveReportIssuedAt,
   saveReportSignatures,
+  saveReportStatus,
   deleteReport,
 } from '@/lib/store';
 import PageLoader, { DbError } from '@/components/PageLoader';
@@ -58,6 +60,19 @@ const NCR_LABEL: Record<ReportNcrType, string> = {
   'NC-Major': 'NC Major',
   'NC-Minor': 'NC Minor',
   'OBS':      'Observation',
+};
+
+// Report workflow status
+const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
+  draft:     'Draft',
+  in_review: 'In Review',
+  approved:  'Approved',
+};
+
+const REPORT_STATUS_BADGE: Record<ReportStatus, string> = {
+  draft:     'bg-slate-100 text-slate-600 border-slate-200',
+  in_review: 'bg-blue-100 text-blue-700 border-blue-200',
+  approved:  'bg-green-100 text-green-700 border-green-200',
 };
 
 // Card left-border accent + subtle background tint per type
@@ -261,6 +276,140 @@ function FindingCard({ finding: f, findingId }: FindingCardProps) {
   );
 }
 
+// ── Edit Report Modal ─────────────────────────────────────────────────────────
+
+interface EditReportModalProps {
+  open: boolean;
+  plan: AuditPlan;
+  onClose: () => void;
+  onSaved: (updated: AuditPlan) => void;
+}
+
+function EditReportModal({ open, plan, onClose, onSaved }: EditReportModalProps) {
+  const [form, setForm] = useState({
+    objective:     plan.objective,
+    standard:      plan.standard,
+    scope:         plan.scope,
+    leadAuditor:   plan.leadAuditor,
+    startDate:     plan.startDate,
+    endDate:       plan.endDate,
+    reportIssuedAt: plan.reportIssuedAt ? plan.reportIssuedAt.slice(0, 10) : '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync form when the plan prop changes (e.g. a different plan is selected)
+  useEffect(() => {
+    setForm({
+      objective:      plan.objective,
+      standard:       plan.standard,
+      scope:          plan.scope,
+      leadAuditor:    plan.leadAuditor,
+      startDate:      plan.startDate,
+      endDate:        plan.endDate,
+      reportIssuedAt: plan.reportIssuedAt ? plan.reportIssuedAt.slice(0, 10) : '',
+    });
+  }, [plan]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const updated: AuditPlan = {
+        ...plan,
+        objective:      form.objective,
+        standard:       form.standard,
+        scope:          form.scope,
+        leadAuditor:    form.leadAuditor,
+        startDate:      form.startDate,
+        endDate:        form.endDate,
+        reportIssuedAt: form.reportIssuedAt
+          ? new Date(form.reportIssuedAt + 'T00:00:00').toISOString()
+          : plan.reportIssuedAt,
+      };
+      await saveAuditPlan(updated);
+      onSaved(updated);
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) return null;
+
+  const field = (label: string, node: React.ReactNode) => (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>
+      {node}
+    </div>
+  );
+
+  const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget && !saving) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="text-base font-semibold text-slate-900">Edit Report</h3>
+          <button onClick={onClose} disabled={saving}
+            className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-4">
+          {field('วัตถุประสงค์ (Objective)',
+            <textarea rows={2} required value={form.objective} onChange={e => setForm(f => ({ ...f, objective: e.target.value }))}
+              className={`${inputCls} resize-none`} />
+          )}
+          {field('มาตรฐานที่ใช้ (Standard)',
+            <input type="text" value={form.standard} onChange={e => setForm(f => ({ ...f, standard: e.target.value }))}
+              className={inputCls} />
+          )}
+          {field('ขอบเขต (Scope)',
+            <textarea rows={2} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}
+              className={`${inputCls} resize-none`} />
+          )}
+          {field('หัวหน้าผู้ตรวจ (Lead Auditor)',
+            <input type="text" value={form.leadAuditor} onChange={e => setForm(f => ({ ...f, leadAuditor: e.target.value }))}
+              className={inputCls} />
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            {field('วันเริ่มตรวจ',
+              <input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                className={inputCls} />
+            )}
+            {field('วันสิ้นสุด',
+              <input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+                className={inputCls} />
+            )}
+          </div>
+          {field('วันที่ออกรายงาน (Report Issued)',
+            <input type="date" value={form.reportIssuedAt} onChange={e => setForm(f => ({ ...f, reportIssuedAt: e.target.value }))}
+              className={inputCls} />
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} disabled={saving}
+              className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors">
+              ยกเลิก
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+              {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ReportPage() {
@@ -279,6 +428,9 @@ export default function ReportPage() {
   const [creating, setCreating]             = useState(false);
   const [deleteConfirm, setDeleteConfirm]   = useState(false);
   const [deleting, setDeleting]             = useState(false);
+  const [editModalOpen, setEditModalOpen]   = useState(false);
+  const [approveConfirm, setApproveConfirm] = useState(false);
+  const [approving, setApproving]           = useState(false);
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -309,7 +461,9 @@ export default function ReportPage() {
     setSignatures(selectedPlan?.reportSignatures ?? {});
   }, [selectedPlan]);
 
-  const issuedAt = selectedPlan?.reportIssuedAt ?? null; // null = report not yet created
+  const issuedAt     = selectedPlan?.reportIssuedAt ?? null; // null = report not yet created
+  const reportStatus: ReportStatus = selectedPlan?.reportStatus ?? 'draft';
+  const isApproved   = reportStatus === 'approved';
 
   // Findings: NCRs for this plan, OFI excluded, sorted by severity
   const findings = useMemo(() => {
@@ -403,6 +557,28 @@ export default function ReportPage() {
     }
   }
 
+  async function handleApprove() {
+    if (!selectedPlanId) return;
+    setApproving(true);
+    try {
+      await saveReportStatus(selectedPlanId, 'approved');
+      const refreshed = await getAuditPlans();
+      setPlans(refreshed);
+      setApproveConfirm(false);
+    } catch (err) {
+      alert('อนุมัติไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  // Called by EditReportModal when save succeeds — refreshes plan list in place
+  async function handleReportSaved(updated: AuditPlan) {
+    setEditModalOpen(false);
+    const refreshed = await getAuditPlans();
+    setPlans(refreshed);
+  }
+
   // ── Guard ──────────────────────────────────────────────────────────────────
 
   if (loading) return <PageLoader message="กำลังโหลด Management Report…" />;
@@ -415,6 +591,48 @@ export default function ReportPage() {
   return (
     <>
       <SigModal open={sigModalOpen} onConfirm={handleSigConfirm} onClose={() => setSigModalOpen(false)} />
+
+      {/* ── Edit Report modal ──────────────────────────────────────────────── */}
+      {editModalOpen && selectedPlan && (
+        <EditReportModal
+          open={editModalOpen}
+          plan={selectedPlan}
+          onClose={() => setEditModalOpen(false)}
+          onSaved={handleReportSaved}
+        />
+      )}
+
+      {/* ── Approve confirmation dialog ────────────────────────────────────── */}
+      {approveConfirm && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget && !approving) setApproveConfirm(false); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 w-full max-w-sm">
+            <div className="w-11 h-11 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-base font-semibold text-slate-900 text-center mb-1">อนุมัติรายงานนี้?</h3>
+            <p className="text-sm text-slate-500 text-center mb-5">
+              เมื่ออนุมัติแล้ว รายงานจะถูกล็อก<br />
+              ไม่สามารถแก้ไขหรือลบได้อีก
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setApproveConfirm(false)} disabled={approving}
+                className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors">
+                ยกเลิก
+              </button>
+              <button onClick={handleApprove} disabled={approving}
+                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                {approving ? 'กำลังอนุมัติ…' : '✓ ยืนยัน อนุมัติ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Delete Report confirmation dialog ──────────────────────────────── */}
       {deleteConfirm && (
@@ -477,19 +695,53 @@ export default function ReportPage() {
 
             {reportCreated ? (
               <>
-                {/* Admin-only: Delete Report */}
                 {isAdmin && (
-                  <button
-                    onClick={() => setDeleteConfirm(true)}
-                    className="flex items-center gap-1.5 border border-red-300 text-red-600 text-sm px-4 py-2 rounded-lg hover:bg-red-50 transition-colors font-medium"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                    </svg>
-                    Delete Report
-                  </button>
+                  <>
+                    {/* Delete Report — disabled when Approved */}
+                    <button
+                      onClick={() => setDeleteConfirm(true)}
+                      disabled={isApproved}
+                      title={isApproved ? 'รายงานนี้ได้รับการอนุมัติแล้ว ไม่สามารถลบได้' : undefined}
+                      className="flex items-center gap-1.5 border border-red-300 text-red-600 text-sm px-4 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors font-medium"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                      </svg>
+                      Delete
+                    </button>
+
+                    {/* Edit Report — disabled when Approved */}
+                    <button
+                      onClick={() => setEditModalOpen(true)}
+                      disabled={isApproved}
+                      title={isApproved ? 'รายงานนี้ได้รับการอนุมัติแล้ว ไม่สามารถแก้ไขได้' : undefined}
+                      className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors font-medium"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                      </svg>
+                      Edit Report
+                    </button>
+
+                    {/* Approve — shown only when not yet approved */}
+                    {!isApproved && (
+                      <button
+                        onClick={() => setApproveConfirm(true)}
+                        className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Approve
+                      </button>
+                    )}
+                  </>
                 )}
+
+                {/* Export PDF — always enabled */}
                 <button
                   onClick={() => window.print()}
                   className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
@@ -560,8 +812,13 @@ export default function ReportPage() {
             {/* ── Report header ─────────────────────────────────────────────── */}
             <div className="flex justify-between items-start pb-5 border-b border-slate-200">
               <div>
-                <h1 className="text-2xl font-medium text-slate-900">Management Report</h1>
-                <p className="text-sm text-slate-500 mt-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h1 className="text-2xl font-medium text-slate-900">Management Report</h1>
+                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${REPORT_STATUS_BADGE[reportStatus]}`}>
+                    {REPORT_STATUS_LABEL[reportStatus]}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500">
                   {selectedPlan!.objective} · {selectedPlan!.standard}
                 </p>
                 {selectedPlan!.scope && (

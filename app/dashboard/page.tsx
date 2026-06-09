@@ -346,22 +346,18 @@ export default function DashboardPage() {
         <div className="bg-red-50 rounded-xl border border-red-200 p-4">
           <p className="text-xs font-medium text-red-600 mb-1">NC Major</p>
           <p className="text-3xl font-bold text-red-700">{statusCounts['NC-Major']}</p>
-          <p className="text-xs text-red-500 mt-1">{pct(statusCounts['NC-Major'])}% of total</p>
         </div>
         <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
           <p className="text-xs font-medium text-orange-600 mb-1">NC Minor</p>
           <p className="text-3xl font-bold text-orange-700">{statusCounts['NC-Minor']}</p>
-          <p className="text-xs text-orange-500 mt-1">{pct(statusCounts['NC-Minor'])}% of total</p>
         </div>
         <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
           <p className="text-xs font-medium text-blue-600 mb-1">OBS</p>
           <p className="text-3xl font-bold text-blue-700">{statusCounts['OBS']}</p>
-          <p className="text-xs text-blue-500 mt-1">{pct(statusCounts['OBS'])}% of total</p>
         </div>
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
           <p className="text-xs font-medium text-amber-600 mb-1">OFI</p>
           <p className="text-3xl font-bold text-amber-700">{ncrTypeCounts['OFI'] ?? 0}</p>
-          <p className="text-xs text-amber-500 mt-1">NCR Management</p>
         </div>
       </div>
 

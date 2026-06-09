@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { AuditPlan, ChecklistItem, CorrectiveAction, CorrectiveActionStatus, FindingStatus, PlanSession } from '@/lib/types';
 import {
   getAuditPlans,
@@ -9,6 +9,7 @@ import {
   getPlanSessions,
   saveCorrectiveAction,
   deleteCorrectiveAction,
+  generateNcrNumber,
   uid,
 } from '@/lib/store';
 import StatusBadge, { FINDING_STATUSES } from '@/components/StatusBadge';
@@ -106,11 +107,15 @@ export default function DashboardPage() {
 
   const [ncrModal, setNcrModal]         = useState<NcrModalCtx | null>(null);
   const [ncrForm, setNcrForm]           = useState<Partial<CorrectiveAction>>(BLANK);
+  const [previewNcrNumber, setPreviewNcrNumber] = useState<string>('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [ncrSaving, setNcrSaving]       = useState(false);
 
   const [loading, setLoading]           = useState(false);
   const [dbError, setDbError]           = useState<string | null>(null);
+
+  // Track whether we have already run the one-time NCR-number migration
+  const migrationRan = useRef(false);
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -136,6 +141,34 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // ── One-time migration: assign ncrNumber to existing unnumbered NCRs ──────
+  // Runs once after the first successful data load. NCRs are sorted by
+  // createdAt so the oldest gets the lowest sequence number.
+
+  useEffect(() => {
+    if (migrationRan.current) return;
+    const allNcrs = cas.filter(ca => ca.ncrType !== undefined);
+    if (allNcrs.length === 0) return; // data not yet loaded
+    const unnumbered = allNcrs.filter(ca => !ca.ncrNumber);
+    if (unnumbered.length === 0) {
+      migrationRan.current = true;
+      return;
+    }
+    migrationRan.current = true;
+    // Sort oldest-first so numbering matches creation order
+    const sorted = [...unnumbered].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const numbered = allNcrs.filter(ca => !!ca.ncrNumber); // already have numbers
+    (async () => {
+      for (const ncr of sorted) {
+        const ncrNumber = generateNcrNumber(numbered);
+        const updated   = { ...ncr, ncrNumber };
+        await saveCorrectiveAction(updated);
+        numbered.push(updated); // so the next iteration sees this number
+      }
+      await reload();
+    })();
+  }, [cas, reload]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -190,6 +223,8 @@ export default function DashboardPage() {
 
   function openCreate() {
     setNcrForm({ ...BLANK });
+    const preview = generateNcrNumber(cas.filter(ca => ca.ncrType !== undefined));
+    setPreviewNcrNumber(preview);
     setNcrModal({ mode: 'create' });
   }
 
@@ -205,10 +240,14 @@ export default function DashboardPage() {
       let record: CorrectiveAction;
 
       if (ncrModal?.mode === 'create') {
+        // Generate the final NCR number at save time (preview was computed at modal-open,
+        // but another tab might have created one in the meantime — re-generate to be safe).
+        const ncrNumber = generateNcrNumber(cas.filter(ca => ca.ncrType !== undefined));
         record = {
           id: uid(),
           checklistItemId: '',
           sessionId: selectedPlanId,          // link NCR to the selected plan
+          ncrNumber,
           clauseRef:        ncrForm.clauseRef ?? '',
           description:      ncrForm.description ?? '',
           rootCause:        ncrForm.rootCause ?? '',
@@ -468,6 +507,7 @@ export default function DashboardPage() {
               <thead>
                 <tr className="border-b border-slate-100 text-left">
                   <th className="text-xs font-medium text-slate-500 pb-3 pr-3 w-8">#</th>
+                  <th className="text-xs font-medium text-slate-500 pb-3 pr-3 w-28">หมายเลข NCR</th>
                   <th className="text-xs font-medium text-slate-500 pb-3 pr-3 w-28">ประเภท</th>
                   <th className="text-xs font-medium text-slate-500 pb-3 pr-3 w-28">ข้อกำหนด ISO</th>
                   <th className="text-xs font-medium text-slate-500 pb-3 pr-3">รายละเอียด</th>
@@ -479,6 +519,15 @@ export default function DashboardPage() {
                 {filteredNcrs.map((ncr, idx) => (
                   <tr key={ncr.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                     <td className="py-3 pr-3 text-xs text-slate-400 font-mono">{idx + 1}</td>
+                    <td className="py-3 pr-3">
+                      {ncr.ncrNumber ? (
+                        <span className="font-mono text-xs bg-slate-800 text-slate-100 px-2 py-0.5 rounded tracking-wide">
+                          {ncr.ncrNumber}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
                     <td className="py-3 pr-3">
                       {ncr.ncrType && (
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${NCR_TYPE_BADGE[ncr.ncrType as NcrType]}`}>
@@ -560,6 +609,20 @@ export default function DashboardPage() {
         size="lg"
       >
         <div className="space-y-5">
+
+          {/* ── NCR Number Preview (create mode only) ────────────────────── */}
+          {ncrModal?.mode === 'create' && (
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+              </svg>
+              <span className="text-xs text-slate-500">หมายเลข NCR ที่จะได้รับ</span>
+              <span className="font-mono text-sm font-bold bg-slate-800 text-white px-3 py-1 rounded tracking-widest ml-auto">
+                {previewNcrNumber}
+              </span>
+            </div>
+          )}
 
           {/* ── Section 1: NCR Details (Auditor fills) ───────────────────── */}
           <div>

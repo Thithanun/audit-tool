@@ -97,6 +97,7 @@ export interface CorrectiveAction {
   createdAt: string;
   updatedAt: string;
   // NCR Management fields — optional, only present on standalone NCRs
+  ncrNumber?: string;         // เลขที่ NCR เช่น NCR26001 (NCRXXYYY: XX=ปี, YYY=ลำดับ)
   ncrType?: 'NC-Major' | 'NC-Minor' | 'OBS' | 'OFI'; // ประเภท NCR
   impact?: string;            // ผลกระทบ (Auditor fills)
   recommendation?: string;    // ข้อเสนอแนะ (Auditor fills)

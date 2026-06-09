@@ -360,6 +360,31 @@ export async function deleteStandard(id: string): Promise<void> {
   if (error) throw pgErr(error);
 }
 
+// ── NCR Number Generator ──────────────────────────────────────────────────────
+
+/**
+ * Generate the next available NCR number for the current year.
+ * Format: NCRXXYYY  where XX = 2-digit year (e.g. "26" for 2026)
+ *                         YYY = zero-padded 3-digit sequence (001, 002, …)
+ *
+ * Pass the full list of existing NCR CorrectiveActions so the function can
+ * find the highest sequence already used this year and increment it.
+ */
+export function generateNcrNumber(existingNcrs: CorrectiveAction[]): string {
+  const year = new Date().getFullYear();
+  const xx     = String(year).slice(-2);          // "26"
+  const prefix = `NCR${xx}`;                      // "NCR26"
+  let maxSeq = 0;
+  for (const ncr of existingNcrs) {
+    if (ncr.ncrNumber?.startsWith(prefix)) {
+      const seq = parseInt(ncr.ncrNumber.slice(prefix.length), 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+    }
+  }
+  const yyy = String(maxSeq + 1).padStart(3, '0');
+  return `${prefix}${yyy}`;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 export function computeSessionProgress(

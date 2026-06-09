@@ -91,6 +91,36 @@ export async function updateUserRole(
   }
 }
 
+export async function resetUserPassword(
+  userId: string,
+): Promise<{ error: string | null }> {
+  try {
+    await assertAdmin();
+
+    // Prevent admin from resetting their own password via this page
+    const supabase = await createSupabaseServer();
+    const { data: { user: caller } } = await supabase.auth.getUser();
+    if (caller?.id === userId) {
+      throw new Error('Cannot reset your own password from this page');
+    }
+
+    const admin = await getAdminClient();
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      password: 'P@ssw0rd',
+    });
+    if (error) throw new Error(error.message);
+
+    // Audit log — who reset whose password and when
+    console.log(
+      `[resetUserPassword] admin=${caller?.id} target=${userId} at=${new Date().toISOString()}`,
+    );
+    return { error: null };
+  } catch (err) {
+    console.error('[resetUserPassword]', toMsg(err));
+    return { error: toMsg(err) };
+  }
+}
+
 export async function removeUser(
   userId: string,
 ): Promise<{ error: string | null }> {

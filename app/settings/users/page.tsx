@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, type UserProfile, type UserRole } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { createUser, updateUserRole, removeUser } from './actions';
+import { createUser, updateUserRole, removeUser, resetUserPassword } from './actions';
 import Modal from '@/components/Modal';
 import PageLoader from '@/components/PageLoader';
 
@@ -18,7 +18,7 @@ const ROLE_BADGE: Record<UserRole, string> = {
 
 export default function UsersPage() {
   const router = useRouter();
-  const { isAdmin, loading: authLoading } = useAuth();
+  const { isAdmin, loading: authLoading, profile: currentProfile } = useAuth();
 
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,6 +35,10 @@ export default function UsersPage() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -98,6 +102,26 @@ export default function UsersPage() {
     setDeleting(false);
   }
 
+  async function handleReset() {
+    if (!resetTarget) return;
+    setResetting(true);
+    const { error } = await resetUserPassword(resetTarget.id);
+    if (error) {
+      alert('Reset failed: ' + error);
+    } else {
+      setToast(`Password has been reset for ${resetTarget.name || resetTarget.email}`);
+      setResetTarget(null);
+    }
+    setResetting(false);
+  }
+
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   if (authLoading || loading) return <PageLoader message="กำลังโหลดรายชื่อ Users…" />;
 
   return (
@@ -118,6 +142,16 @@ export default function UsersPage() {
         </button>
       </div>
 
+      {/* Success toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg animate-fade-in">
+          <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {toast}
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600 mb-6">
           {error}
@@ -130,7 +164,7 @@ export default function UsersPage() {
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="text-left text-xs font-semibold text-slate-500 px-5 py-3">User</th>
               <th className="text-left text-xs font-semibold text-slate-500 px-5 py-3 w-36">Role</th>
-              <th className="w-16"></th>
+              <th className="w-24"></th>
             </tr>
           </thead>
           <tbody>
@@ -168,13 +202,28 @@ export default function UsersPage() {
                     </select>
                   </td>
                   <td className="px-4 py-3.5 text-right">
-                    <button
-                      onClick={() => setDeleteId(u.id)}
-                      className="text-slate-400 hover:text-red-500 text-xs transition-colors"
-                      title="Remove user"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      {/* Reset password — hidden for own account */}
+                      {u.id !== currentProfile?.id && (
+                        <button
+                          onClick={() => setResetTarget(u)}
+                          className="text-slate-400 hover:text-amber-500 transition-colors"
+                          title="Reset password"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+                              d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setDeleteId(u.id)}
+                        className="text-slate-400 hover:text-red-500 text-xs transition-colors"
+                        title="Remove user"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -286,6 +335,51 @@ export default function UsersPage() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Reset Password Confirm */}
+      <Modal open={!!resetTarget} onClose={() => setResetTarget(null)} title="Reset Password" size="md">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+            <svg className="w-4.5 h-4.5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+                d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              Reset password for{' '}
+              <span className="font-semibold text-slate-900">
+                {resetTarget?.name || resetTarget?.email}
+              </span>
+              ?
+            </p>
+            <p className="text-sm text-slate-500 mt-1">
+              Their password will be set to the default:{' '}
+              <code className="font-mono text-xs bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                P@ssw0rd
+              </code>
+            </p>
+            <p className="text-xs text-slate-400 mt-2">
+              Ask them to change it immediately after logging in.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setResetTarget(null)}
+            className="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            {resetting ? 'Resetting…' : 'Confirm Reset'}
+          </button>
+        </div>
       </Modal>
 
       {/* Remove Confirm */}

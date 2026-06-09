@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus } from '@/lib/types';
@@ -101,6 +102,7 @@ export default function PlanDetailPage() {
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
+  useVisibilityRefresh(reload); // re-fetch when user switches back to this tab
 
   // ── plan edit ────────────────────────────────────────────────────────────────
 

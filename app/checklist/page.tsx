@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import type { ChecklistItem, ChecklistTemplate, FindingStatus, PlanSession, AuditPlan } from '@/lib/types';
 import {
   getAuditPlans,
@@ -262,6 +263,7 @@ export default function ChecklistPage() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+  useVisibilityRefresh(reload); // re-fetch when user switches back to this tab
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -323,9 +325,15 @@ export default function ChecklistPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  function handleUpdate(updated: ChecklistItem) {
+  async function handleUpdate(updated: ChecklistItem) {
+    // Optimistic update for instant UI feedback
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
-    saveChecklistItem(updated).catch(e => console.error('Save failed:', e));
+    try {
+      await saveChecklistItem(updated); // await so qc cache is invalidated before any navigation
+    } catch (e) {
+      console.error('Save failed:', e);
+      await reload(); // revert optimistic update on error
+    }
   }
 
   async function handleDelete(id: string) {

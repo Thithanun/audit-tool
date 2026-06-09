@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import Link from 'next/link';
 import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus } from '@/lib/types';
 import {
@@ -59,6 +60,7 @@ export default function AuditPlanListPage() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+  useVisibilityRefresh(reload); // re-fetch when user switches back to this tab
 
   // Build planId → Set<sessionId> so items created under sub-sessions are included.
   const planSessionIdSet = useMemo(() => {

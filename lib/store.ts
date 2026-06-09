@@ -59,7 +59,7 @@ function withTimeout<T>(query: PromiseLike<T>): Promise<T> {
 // Mutations (save / delete) always invalidate the relevant entries so stale data
 // is never shown after the user makes a change.
 
-const TTL_MS = 30_000; // 30 seconds — short enough to stay fresh, long enough to help
+const TTL_MS = 5_000; // 5 seconds — just enough to de-dup concurrent mounts on the same page
 
 interface CacheEntry<T> { data: T; at: number }
 
@@ -76,6 +76,15 @@ const qc = {
   checklistItems:    null as CacheEntry<ChecklistItem[]>     | null,
   correctiveActions: null as CacheEntry<CorrectiveAction[]>  | null,
 };
+
+/** Drop every cached entry immediately.
+ *  Call this when the browser tab regains focus so that cross-tab edits
+ *  are always reflected within one re-fetch cycle. */
+export function clearAllCaches(): void {
+  qc.auditPlans        = null;
+  qc.checklistItems    = null;
+  qc.correctiveActions = null;
+}
 
 // ── Audit Plans ───────────────────────────────────────────────────────────────
 

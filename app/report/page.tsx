@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import { useRouter } from 'next/navigation';
 import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures, ReportStatus } from '@/lib/types';
 import {
@@ -448,6 +449,7 @@ export default function ReportPage() {
   }, [selectedPlanId]);
 
   useEffect(() => { reload(); }, [reload]);
+  useVisibilityRefresh(reload); // re-fetch when user switches back to this tab
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 

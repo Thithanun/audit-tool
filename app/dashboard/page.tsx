@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import type { AuditPlan, ChecklistItem, CorrectiveAction, CorrectiveActionStatus, FindingStatus, PlanSession } from '@/lib/types';
 import {
   getAuditPlans,
@@ -141,6 +142,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+  useVisibilityRefresh(reload); // re-fetch when user switches back to this tab
 
   // ── One-time migration: assign ncrNumber to existing unnumbered NCRs ──────
   // Runs once after the first successful data load. NCRs are sorted by

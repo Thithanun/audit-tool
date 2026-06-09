@@ -6,6 +6,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
+// Force every route to render dynamically (no static HTML caching of the app
+// shell). Data itself is fetched client-side, but this guarantees Vercel never
+// serves a stale prerendered document. Applied at the root so it cascades to all
+// pages (route segment config cannot live in a 'use client' page file).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export const metadata: Metadata = {
   title: "Audit Tool — ISO 27001:2022 & NIST CSF 2.0",
   description: "Internal audit management tool for ISO 27001:2022 and NIST CSF 2.0",

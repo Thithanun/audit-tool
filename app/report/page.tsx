@@ -9,8 +9,6 @@ import {
   getCorrectiveActions,
   saveAuditPlan,
   saveReportIssuedAt,
-  saveReportSignatures,
-  saveReportStatus,
   deleteReport,
 } from '@/lib/store';
 import PageLoader, { DbError } from '@/components/PageLoader';
@@ -211,28 +209,67 @@ function SigBox({ sig, canSign, onSign, onClear }: SigBoxProps) {
   const signed = !!sig;
 
   return (
-    <div className={`rounded-xl border p-5 flex flex-col items-center gap-4 transition-colors ${signed ? 'bg-green-50 border-green-300' : 'bg-white border-slate-200'}`}>
+    <div className={`rounded-xl border p-5 flex flex-col items-center gap-3 transition-colors ${signed ? 'bg-green-50 border-green-300' : 'bg-white border-slate-200'}`}>
+      {/* Signature canvas preview */}
       <canvas
         ref={previewRef}
         width={340} height={80}
         className={`w-full max-w-sm rounded-lg border ${signed ? 'border-green-200 bg-green-50/60' : 'border-dashed border-slate-300 bg-slate-50'}`}
       />
+
+      {/* Sign / Clear buttons */}
       {canSign && (
         <div className="flex gap-2">
-          <button onClick={onSign} className="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors text-slate-700 font-medium">✏️ ลงนาม</button>
-          {signed && <button onClick={onClear} className="text-sm text-slate-400 hover:text-red-500 transition-colors px-2">ล้าง</button>}
+          {!signed && (
+            <button
+              onClick={onSign}
+              className="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors text-slate-700 font-medium"
+            >
+              ✏️ ลงนาม
+            </button>
+          )}
+          {signed && (
+            <button
+              onClick={onClear}
+              className="text-xs text-slate-400 hover:text-red-500 transition-colors px-2 underline underline-offset-2"
+            >
+              ล้างลายเซ็น
+            </button>
+          )}
         </div>
       )}
-      <div className="text-center">
+
+      {/* Signer info block */}
+      <div className="text-center w-full">
         <p className="text-sm font-semibold text-slate-800">Management Committee</p>
-        <p className="text-xs text-slate-500 mt-0.5">คณะกรรมการบริหาร</p>
-        <div className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full mt-2 ${
-          signed
-            ? 'bg-green-100 text-green-800 border border-green-300'
-            : 'bg-slate-100 text-slate-400 border border-dashed border-slate-300'
-        }`}>
-          {signed ? `✓ ${formatThaiTs(sig!.signedAt)}` : '⏱ ยังไม่ได้ลงนาม'}
-        </div>
+        <p className="text-xs text-slate-500">คณะกรรมการบริหาร</p>
+
+        {signed ? (
+          <>
+            {/* Signer name — big and prominent */}
+            <p className="text-base font-bold text-slate-900 mt-2 tracking-wide">
+              {sig!.signerName ?? '—'}
+            </p>
+            {/* Status badge */}
+            <div className="inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full mt-1.5 bg-green-100 text-green-800 border border-green-300 font-medium">
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+              </svg>
+              ลงนามแล้ว
+            </div>
+            {/* Timestamp below badge */}
+            <p className="text-xs text-slate-400 mt-1">{formatThaiTs(sig!.signedAt)}</p>
+          </>
+        ) : (
+          <>
+            {/* Placeholder name line */}
+            <p className="text-sm text-slate-300 mt-2 italic">ยังไม่ได้ลงนาม</p>
+            {/* Status badge */}
+            <div className="inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full mt-1.5 bg-slate-100 text-slate-400 border border-dashed border-slate-300">
+              ⏱ รอลายเซ็น
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -527,20 +564,26 @@ export default function ReportPage() {
 
   async function handleSigConfirm(dataUrl: string) {
     setSigModalOpen(false);
-    const updated: ReportSignatures = {
-      ...signatures,
-      management: { sigData: dataUrl, signedAt: new Date().toISOString() },
-    };
-    setSignatures(updated); // immediate local feedback — isApproved flips instantly
     if (!selectedPlanId) return;
     setSigSaving(true);
     try {
-      // Save signature, then auto-approve: both writes in parallel
-      await Promise.all([
-        saveReportSignatures(selectedPlanId, updated),
-        saveReportStatus(selectedPlanId, 'approved'),
-      ]);
-      // Refresh plans so reportStatus reflects 'approved' on next render
+      // POST to server — role is validated server-side; signer name/ID are set there too
+      const res = await fetch(`/api/report/${selectedPlanId}/sign`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sigData: dataUrl }),
+        cache:   'no-store',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const { signature } = await res.json() as { signature: ReportSignature; reportStatus: string };
+
+      // Update local state with the server-confirmed signature (includes signerName)
+      setSignatures(prev => ({ ...prev, management: signature }));
+
+      // Refresh plans so reportStatus reflects 'approved'
       const refreshed = await getAuditPlans();
       setPlans(refreshed);
     } catch (err) {
@@ -551,20 +594,26 @@ export default function ReportPage() {
   }
 
   async function handleSigClear() {
-    const updated: ReportSignatures = { ...signatures, management: undefined };
-    setSignatures(updated); // immediate local feedback — isApproved flips back instantly
     if (!selectedPlanId) return;
     setSigSaving(true);
+    // Optimistic UI — clear locally first
+    setSignatures(prev => ({ ...prev, management: undefined }));
     try {
-      // Remove signature and revert status to draft in parallel
-      await Promise.all([
-        saveReportSignatures(selectedPlanId, updated),
-        saveReportStatus(selectedPlanId, 'draft'),
-      ]);
+      // DELETE to server — validates role server-side, reverts status to 'draft'
+      const res = await fetch(`/api/report/${selectedPlanId}/sign`, {
+        method: 'DELETE',
+        cache:  'no-store',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
       const refreshed = await getAuditPlans();
       setPlans(refreshed);
     } catch (err) {
       alert('ลบลายเซ็นไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+      // Roll back optimistic update
+      setSignatures(selectedPlan?.reportSignatures ?? {});
     } finally {
       setSigSaving(false);
     }

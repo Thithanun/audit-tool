@@ -200,8 +200,10 @@ export interface ClauseTemplate {
 // ── Management Report ─────────────────────────────────────────────────────────
 
 export interface ReportSignature {
-  sigData: string;   // base64 PNG data URL of the drawn signature
-  signedAt: string;  // ISO timestamp
+  sigData: string;      // base64 PNG data URL of the drawn signature
+  signedAt: string;     // ISO timestamp
+  signerName?: string;  // display name from profiles.name (set server-side)
+  signerId?: string;    // auth user ID — audit trail (set server-side)
 }
 
 export interface ReportSignatures {

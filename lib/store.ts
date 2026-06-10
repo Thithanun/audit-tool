@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, ReportSignatures, ReportStatus, Standard,
+  AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, NcrAttachment, PlanSession, ReportSignatures, ReportStatus, Standard,
   StandardVersion, DbClause, Framework,
 } from './types';
 import { ISMS_CLAUSES, ISO27001_CLAUSES, NIST_CSF_CLAUSES } from './seed-data';
@@ -414,6 +414,54 @@ export async function getCorrectiveActionById(id: string): Promise<CorrectiveAct
     throw pgErr(error);
   }
   return fromRow<CorrectiveAction>(data as DataRow);
+}
+
+// ── NCR File Attachments ──────────────────────────────────────────────────────
+
+/**
+ * Upload a single file to Supabase Storage under the 'ncr-attachments' bucket.
+ * Storage path: {ncrId}/{attachmentId}/{filename}
+ *
+ * The bucket must exist in Supabase Storage and have public access enabled.
+ * Returns the NcrAttachment metadata to be stored in NcrSection4Data.attachments[].
+ */
+export async function uploadNcrAttachment(
+  ncrId: string,
+  file: File,
+): Promise<NcrAttachment> {
+  const attachmentId = uid();
+  const storagePath  = `${ncrId}/${attachmentId}/${file.name}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('ncr-attachments')
+    .upload(storagePath, file, { cacheControl: '3600', upsert: false });
+
+  if (uploadError) throw new Error(`อัปโหลดไม่สำเร็จ: ${uploadError.message}`);
+
+  const { data: urlData } = supabase.storage
+    .from('ncr-attachments')
+    .getPublicUrl(storagePath);
+
+  return {
+    id:          attachmentId,
+    name:        file.name,
+    type:        file.type,
+    size:        file.size,
+    storagePath,
+    url:         urlData.publicUrl,
+    uploadedAt:  new Date().toISOString(),
+  };
+}
+
+/**
+ * Delete a single attachment from Supabase Storage.
+ * Call this when the user clicks the delete (×) button on an uploaded file.
+ */
+export async function deleteNcrAttachment(storagePath: string): Promise<void> {
+  const { error } = await supabase.storage
+    .from('ncr-attachments')
+    .remove([storagePath]);
+  if (error) throw new Error(`ลบไฟล์ไม่สำเร็จ: ${error.message}`);
 }
 
 // ── Standard Versions & Clauses ───────────────────────────────────────────────

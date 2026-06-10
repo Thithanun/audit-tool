@@ -49,12 +49,24 @@ export interface NcrSection3Data {
   reviewedAt?: string;
 }
 
+/** One file attachment stored in Supabase Storage, referenced from NcrSection4Data */
+export interface NcrAttachment {
+  id: string;          // UUID assigned at upload time
+  name: string;        // original filename shown to the user
+  type: string;        // MIME type, e.g. "image/jpeg" or "application/pdf"
+  size: number;        // size in bytes
+  storagePath: string; // path inside the "ncr-attachments" Storage bucket
+  url: string;         // public URL for view / download
+  uploadedAt: string;  // ISO timestamp
+}
+
 /** Section 4 data — filled by Auditee (implementation results + evidence) */
 export interface NcrSection4Data {
   results: string;
   evidence: string;
   completedDate?: string;
   submittedAt?: string;
+  attachments?: NcrAttachment[]; // file evidence uploaded to Supabase Storage
 }
 
 /** Section 5 data — filled by Auditor (final closure) */

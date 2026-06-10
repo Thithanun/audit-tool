@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type {
   CorrectiveAction,
+  NcrAttachment,
   NcrWorkflowStatus,
   NcrSection2Data,
   NcrSection3Data,
   NcrSection4Data,
   NcrSection5Data,
 } from '@/lib/types';
-import { getCorrectiveActionById } from '@/lib/store';
+import { getCorrectiveActionById, uploadNcrAttachment, deleteNcrAttachment } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import PageLoader, { DbError } from '@/components/PageLoader';
 
@@ -65,6 +66,20 @@ const STEPS = [
 // Colors
 const AUDITOR_COLOR = '#3C3489';
 const AUDITEE_COLOR = '#0F6E56';
+
+// ── File attachment constants ──────────────────────────────────────────────────
+const MAX_FILES    = 5;
+const MAX_SIZE_MB  = 10;
+const ALLOWED_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+const ALLOWED_ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx';
+const ALLOWED_LABEL  = 'JPG, PNG, WEBP, PDF, DOC, DOCX, XLS, XLSX';
 
 // ── Utility components ────────────────────────────────────────────────────────
 
@@ -242,6 +257,12 @@ export default function NcrDetailPage() {
   const [sec4, setSec4] = useState<NcrSection4Data>(BLANK_SEC4);
   const [sec5, setSec5] = useState<NcrSection5Data>(BLANK_SEC5);
 
+  // ── Section 4 file attachments ────────────────────────────────────────────
+  const [attachments,    setAttachments]    = useState<NcrAttachment[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [attachError,    setAttachError]    = useState<string | null>(null);
+  const [isDragging,     setIsDragging]     = useState(false);
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -253,7 +274,10 @@ export default function NcrDetailPage() {
       setNcr(record);
       if (record.ncrSection2) setSec2(record.ncrSection2);
       if (record.ncrSection3) setSec3(record.ncrSection3);
-      if (record.ncrSection4) setSec4(record.ncrSection4);
+      if (record.ncrSection4) {
+        setSec4(record.ncrSection4);
+        if (record.ncrSection4.attachments) setAttachments(record.ncrSection4.attachments);
+      }
       if (record.ncrSection5) setSec5(record.ncrSection5);
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
@@ -288,7 +312,10 @@ export default function NcrDetailPage() {
       // Re-fill form states with the confirmed server values
       if (updated.ncrSection2) setSec2(updated.ncrSection2);
       if (updated.ncrSection3) setSec3(updated.ncrSection3);
-      if (updated.ncrSection4) setSec4(updated.ncrSection4);
+      if (updated.ncrSection4) {
+        setSec4(updated.ncrSection4);
+        if (updated.ncrSection4.attachments) setAttachments(updated.ncrSection4.attachments);
+      }
       if (updated.ncrSection5) setSec5(updated.ncrSection5);
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
@@ -307,8 +334,46 @@ export default function NcrDetailPage() {
     await callSectionApi({ section: 3, approved: approve, reviewNotes: sec3.reviewNotes });
   }
 
+  async function handleFiles(files: FileList | File[]) {
+    setAttachError(null);
+    const arr = Array.from(files);
+    if (attachments.length + arr.length > MAX_FILES) {
+      setAttachError(`แนบไฟล์ได้สูงสุด ${MAX_FILES} ไฟล์ (มีแล้ว ${attachments.length} ไฟล์)`);
+      return;
+    }
+    for (const file of arr) {
+      if (!ALLOWED_MIME.has(file.type)) {
+        setAttachError(`ไฟล์ "${file.name}" ไม่รองรับ — รองรับเฉพาะ ${ALLOWED_LABEL}`);
+        return;
+      }
+      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+        setAttachError(`ไฟล์ "${file.name}" ขนาดเกิน ${MAX_SIZE_MB} MB`);
+        return;
+      }
+    }
+    setUploadingCount(arr.length);
+    try {
+      const uploaded = await Promise.all(arr.map(f => uploadNcrAttachment(id, f)));
+      setAttachments(prev => [...prev, ...uploaded]);
+    } catch (e) {
+      setAttachError(e instanceof Error ? e.message : 'อัปโหลดไม่สำเร็จ');
+    } finally {
+      setUploadingCount(0);
+    }
+  }
+
+  async function removeAttachment(att: NcrAttachment) {
+    setAttachError(null);
+    try {
+      await deleteNcrAttachment(att.storagePath);
+      setAttachments(prev => prev.filter(a => a.id !== att.id));
+    } catch (e) {
+      setAttachError(e instanceof Error ? e.message : 'ลบไฟล์ไม่สำเร็จ');
+    }
+  }
+
   async function submitSection4() {
-    await callSectionApi({ section: 4, ...sec4 });
+    await callSectionApi({ section: 4, ...sec4, attachments });
   }
 
   async function submitSection5() {
@@ -692,10 +757,113 @@ export default function NcrDetailPage() {
                 type="date"
                 rows={1}
               />
+
+              {/* ── File attachment zone ─────────────────────────────────── */}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  แนบไฟล์หลักฐาน
+                  <span className="ml-1 text-slate-400 font-normal">
+                    ({attachments.length}/{MAX_FILES})
+                  </span>
+                </label>
+
+                {/* Drag & drop / click zone — only show when under limit */}
+                {attachments.length < MAX_FILES && (
+                  <div
+                    className={`relative border-2 border-dashed rounded-xl p-5 text-center transition-all cursor-pointer ${
+                      isDragging
+                        ? 'border-[#0F6E56] bg-[#0F6E56]/5'
+                        : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
+                    }`}
+                    onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      setIsDragging(false);
+                      void handleFiles(e.dataTransfer.files);
+                    }}
+                  >
+                    <input
+                      type="file"
+                      multiple
+                      accept={ALLOWED_ACCEPT}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      onChange={e => { if (e.target.files) void handleFiles(e.target.files); e.target.value = ''; }}
+                    />
+                    <svg className="w-8 h-8 mx-auto text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    {uploadingCount > 0 ? (
+                      <p className="text-sm text-[#0F6E56] font-medium">กำลังอัปโหลด {uploadingCount} ไฟล์…</p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-slate-600">
+                          ลากไฟล์มาวางที่นี่ หรือ{' '}
+                          <span className="text-[#0F6E56] font-semibold">คลิกเลือกไฟล์</span>
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {ALLOWED_LABEL} · สูงสุด {MAX_SIZE_MB} MB/ไฟล์
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Attachment error */}
+                {attachError && (
+                  <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {attachError}
+                  </p>
+                )}
+
+                {/* Uploaded files list */}
+                {attachments.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {attachments.map(att => {
+                      const isImg = att.type.startsWith('image/');
+                      return (
+                        <div key={att.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                          {isImg ? (
+                            <img
+                              src={att.url}
+                              alt={att.name}
+                              className="w-10 h-10 rounded object-cover flex-shrink-0 border border-slate-200"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-slate-200 flex items-center justify-center flex-shrink-0 text-lg">
+                              📄
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-700 truncate">{att.name}</p>
+                            <p className="text-xs text-slate-400">{(att.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void removeAttachment(att)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded"
+                            title="ลบไฟล์นี้"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end pt-2">
                 <button
                   type="button"
-                  disabled={saving || !sec4.results.trim()}
+                  disabled={saving || uploadingCount > 0 || !sec4.results.trim()}
                   onClick={submitSection4}
                   className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50"
                   style={{ background: AUDITEE_COLOR }}
@@ -713,6 +881,54 @@ export default function NcrDetailPage() {
                   {ncr.ncrSection4.completedDate && (
                     <ReadOnlyField label="วันที่แล้วเสร็จจริง" value={ncr.ncrSection4.completedDate} />
                   )}
+
+                  {/* Read-only attachments */}
+                  {ncr.ncrSection4.attachments && ncr.ncrSection4.attachments.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 mb-1">
+                        ไฟล์แนบ ({ncr.ncrSection4.attachments.length} ไฟล์)
+                      </p>
+                      <div className="space-y-2">
+                        {ncr.ncrSection4.attachments.map(att => {
+                          const isImg = att.type.startsWith('image/');
+                          return (
+                            <a
+                              key={att.id}
+                              href={att.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200 hover:border-[#0F6E56]/40 hover:bg-[#0F6E56]/5 transition-all group"
+                            >
+                              {isImg ? (
+                                <img
+                                  src={att.url}
+                                  alt={att.name}
+                                  className="w-10 h-10 rounded object-cover flex-shrink-0 border border-slate-200"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center flex-shrink-0 text-lg">
+                                  📄
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-700 truncate group-hover:text-[#0F6E56]">
+                                  {att.name}
+                                </p>
+                                <p className="text-xs text-slate-400">
+                                  {(att.size / 1024).toFixed(1)} KB · คลิกเพื่อดูหรือดาวน์โหลด
+                                </p>
+                              </div>
+                              <svg className="w-4 h-4 text-slate-400 group-hover:text-[#0F6E56] flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {ncr.ncrSection4.submittedAt && (
                     <p className="text-xs text-slate-400">
                       ส่งเมื่อ {new Date(ncr.ncrSection4.submittedAt).toLocaleString('th-TH')}

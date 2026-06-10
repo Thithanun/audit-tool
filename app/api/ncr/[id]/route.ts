@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import type {
   CorrectiveAction,
+  NcrAttachment,
   NcrSection2Data,
   NcrSection3Data,
   NcrSection4Data,
@@ -56,7 +57,7 @@ function toRow<T extends { id: string }>(obj: T): DataRow {
 
 type Section2Payload = { section: 2 } & NcrSection2Data;
 type Section3Payload = { section: 3; approved: boolean; reviewNotes: string };
-type Section4Payload = { section: 4 } & NcrSection4Data;
+type Section4Payload = { section: 4 } & NcrSection4Data & { attachments?: NcrAttachment[] };
 type Section5Payload = { section: 5; closureNotes: string };
 
 type SectionPayload = Section2Payload | Section3Payload | Section4Payload | Section5Payload;
@@ -217,6 +218,7 @@ export async function PATCH(
       evidence:      p.evidence,
       completedDate: p.completedDate,
       submittedAt:   now,
+      attachments:   p.attachments,
     };
     updated = {
       ...ncr,

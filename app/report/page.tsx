@@ -725,12 +725,10 @@ export default function ReportPage() {
               <>
                 {isAdmin && (
                   <>
-                    {/* Delete Report — disabled when Approved */}
+                    {/* Delete Report — Admin can always delete regardless of status */}
                     <button
                       onClick={() => setDeleteConfirm(true)}
-                      disabled={isApproved}
-                      title={isApproved ? 'รายงานนี้ได้รับการอนุมัติแล้ว ไม่สามารถลบได้' : undefined}
-                      className="flex items-center gap-1.5 border border-red-300 text-red-600 text-sm px-4 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors font-medium"
+                      className="flex items-center gap-1.5 border border-red-300 text-red-600 text-sm px-4 py-2 rounded-lg hover:bg-red-50 transition-colors font-medium"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}

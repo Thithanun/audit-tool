@@ -376,17 +376,19 @@ export async function deleteStandard(id: string): Promise<void> {
 // ── NCR Number Generator ──────────────────────────────────────────────────────
 
 /**
- * Generate the next available NCR number for the current Thai Buddhist Era year.
- * Format: NCRyyYYY  where yy  = 2-digit Buddhist Era year (e.g. "69" for 2569 / 2026 CE)
- *                         YYY = zero-padded 3-digit sequence (001, 002, …)
+ * Generate the next available NCR number for the current CE year.
+ * Format: NCRyyNNN  where yy  = 2-digit CE year (e.g. "26" for 2026)
+ *                         NNN = zero-padded 3-digit sequence (001, 002, …)
  *
- * Pass the full list of existing NCR CorrectiveActions so the function can
- * find the highest sequence already used this year and increment it.
+ * Used only for the one-time migration that back-fills NCR numbers for
+ * existing records that were saved before the numbered system existed.
+ * All new NCR creation goes through GET /api/ncr-number (server-side) to
+ * prevent duplicate numbers in multi-user / multi-tab scenarios.
  */
 export function generateNcrNumber(existingNcrs: CorrectiveAction[]): string {
-  const buddhistYear = new Date().getFullYear() + 543; // CE → BE  (2026 → 2569)
-  const yy     = String(buddhistYear).slice(-2);       // "69"
-  const prefix = `NCR${yy}`;                           // "NCR69"
+  const year   = new Date().getFullYear();
+  const yy     = String(year).slice(-2);  // "26" for 2026
+  const prefix = `NCR${yy}`;             // "NCR26"
   let maxSeq = 0;
   for (const ncr of existingNcrs) {
     if (ncr.ncrNumber?.startsWith(prefix)) {

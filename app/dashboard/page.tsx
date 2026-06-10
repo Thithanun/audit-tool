@@ -11,7 +11,7 @@ import {
   getPlanSessions,
   saveCorrectiveAction,
   deleteCorrectiveAction,
-  generateNcrNumber,
+  generateNcrNumber,  // used only by the one-time back-fill migration
   uid,
 } from '@/lib/store';
 import StatusBadge, { FINDING_STATUSES } from '@/components/StatusBadge';
@@ -130,6 +130,7 @@ export default function DashboardPage() {
   const [ncrModal, setNcrModal]         = useState<NcrModalCtx | null>(null);
   const [ncrForm, setNcrForm]           = useState<Partial<CorrectiveAction>>(BLANK);
   const [previewNcrNumber, setPreviewNcrNumber] = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [ncrSaving, setNcrSaving]       = useState(false);
 
@@ -244,11 +245,19 @@ export default function DashboardPage() {
 
   // ── NCR handlers ─────────────────────────────────────────────────────────
 
-  function openCreate() {
+  async function openCreate() {
     setNcrForm({ ...BLANK });
-    const preview = generateNcrNumber(cas.filter(ca => ca.ncrType !== undefined));
-    setPreviewNcrNumber(preview);
+    setPreviewNcrNumber('');
+    setPreviewLoading(true);
     setNcrModal({ mode: 'create' });
+    try {
+      const res = await fetch('/api/ncr-number');
+      if (res.ok) {
+        const { ncrNumber } = await res.json() as { ncrNumber: string };
+        setPreviewNcrNumber(ncrNumber);
+      }
+    } catch { /* non-fatal — preview stays blank */ }
+    finally { setPreviewLoading(false); }
   }
 
   function openEdit(ncr: CorrectiveAction) {
@@ -263,9 +272,12 @@ export default function DashboardPage() {
       let record: CorrectiveAction;
 
       if (ncrModal?.mode === 'create') {
-        // Generate the final NCR number at save time (preview was computed at modal-open,
-        // but another tab might have created one in the meantime — re-generate to be safe).
-        const ncrNumber = generateNcrNumber(cas.filter(ca => ca.ncrType !== undefined));
+        // Fetch the final NCR number from the server at save time.
+        // The server always reads from the DB, so this is safe even when multiple
+        // tabs or users are creating NCRs simultaneously.
+        const numRes = await fetch('/api/ncr-number');
+        if (!numRes.ok) throw new Error('ไม่สามารถสร้างหมายเลข NCR ได้ กรุณาลองใหม่อีกครั้ง');
+        const { ncrNumber } = await numRes.json() as { ncrNumber: string };
         record = {
           id: uid(),
           checklistItemId: '',
@@ -635,8 +647,8 @@ export default function DashboardPage() {
                 d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
             </svg>
             <span className="text-xs text-slate-500">หมายเลข NCR ที่จะได้รับ</span>
-            <span className="font-mono text-sm font-bold bg-slate-800 text-white px-3 py-1 rounded tracking-widest ml-auto">
-              {previewNcrNumber}
+            <span className="font-mono text-sm font-bold bg-slate-800 text-white px-3 py-1 rounded tracking-widest ml-auto min-w-[90px] text-center">
+              {previewLoading ? '…' : (previewNcrNumber || '—')}
             </span>
           </div>
 

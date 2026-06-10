@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "Audit Tool — ISO 27001:2022 & NIST CSF 2.0",
-  description: "Internal audit management tool for ISO 27001:2022 and NIST CSF 2.0",
+  title: "Audit Tool — ISO 27001 & NIST CSF",
+  description: "Internal audit management tool for ISO 27001 and NIST CSF",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -39,7 +39,7 @@ export default function LoginPage() {
           </div>
           <div>
             <p className="font-bold text-slate-900 leading-tight">Audit Tool</p>
-            <p className="text-xs text-slate-500">ISO 27001:2022 · NIST CSF 2.0</p>
+            <p className="text-xs text-slate-500">ISO 27001 · NIST CSF</p>
           </div>
         </div>
 

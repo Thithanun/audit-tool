@@ -407,7 +407,7 @@ export default function PlanDetailPage() {
               <input
                 type="text"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., ISO 27001:2022"
+                placeholder="e.g., ISO 27001"
                 value={planForm.standard}
                 onChange={e => setPlanForm(f => f ? { ...f, standard: e.target.value } : f)}
               />

@@ -172,7 +172,7 @@ export function getClausesByFramework(framework: 'ISO27001' | 'NIST_CSF') {
   return ALL_CLAUSES.filter(c => c.framework === framework);
 }
 
-// ── ISO 27001:2022 group labels ───────────────────────────────────────────────
+// ── ISO 27001 group labels ────────────────────────────────────────────────────
 // Groups are returned in this order when framework === 'ISO27001'.
 export const ISO27001_GROUP_ORDER = [
   'ISMS Requirements (Clause 4–10)',

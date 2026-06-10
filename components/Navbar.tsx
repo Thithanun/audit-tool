@@ -48,7 +48,7 @@ export default function Navbar() {
               Audit Tool
             </span>
             <span className="text-slate-500 text-xs px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 hidden sm:inline">
-              ISO 27001:2022 · NIST CSF 2.0
+              ISO 27001 · NIST CSF
             </span>
           </div>
 

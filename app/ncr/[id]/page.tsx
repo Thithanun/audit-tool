@@ -339,9 +339,25 @@ export default function NcrDetailPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const step     = ncr.ncrCurrentStep ?? 1;
   const wfStatus = ncr.ncrWorkflowStatus;
-  const isClosed = wfStatus === 'ปิดแล้ว';
+
+  // Fallback for legacy NCRs that were created before the 5-step workflow
+  // fields (ncrCurrentStep / ncrWorkflowStatus) were added to the schema.
+  // These NCRs have ncrCurrentStep === undefined and we derive the equivalent
+  // step from the old `status` field so every section renders correctly:
+  //   'Open' / 'Overdue' → step 2  (waiting for Auditee to fill plan)
+  //   'In Progress'      → step 3  (plan submitted, waiting for Auditor)
+  //   'Closed'           → treat as closed (all sections done)
+  const step = ncr.ncrCurrentStep != null
+    ? ncr.ncrCurrentStep
+    : ncr.status === 'In Progress'
+      ? 3
+      : 2;   // 'Open' | 'Overdue' | anything else → Section 2 is next
+
+  const isClosed =
+    wfStatus === 'ปิดแล้ว' ||
+    // Legacy closed NCR: no workflow status but old status says Closed
+    (ncr.ncrCurrentStep == null && ncr.status === 'Closed');
 
   function sectionState(n: number): SectionState {
     if (n === 1) return 'done'; // Section 1 is always done after NCR creation

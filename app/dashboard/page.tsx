@@ -251,13 +251,22 @@ export default function DashboardPage() {
     setPreviewLoading(true);
     setNcrModal({ mode: 'create' });
     try {
-      const res = await fetch('/api/ncr-number');
+      // cache: 'no-store' bypasses the browser HTTP cache so we always get a
+      // fresh sequence number even if the browser previously cached the response.
+      const res = await fetch('/api/ncr-number', { cache: 'no-store' });
       if (res.ok) {
-        const { ncrNumber } = await res.json() as { ncrNumber: string };
-        setPreviewNcrNumber(ncrNumber);
+        const json = await res.json() as { ncrNumber: string; debug?: unknown };
+        console.log('[NCR preview] API response:', json);
+        setPreviewNcrNumber(json.ncrNumber);
+      } else {
+        const body = await res.text();
+        console.error('[NCR preview] API error', res.status, body);
       }
-    } catch { /* non-fatal — preview stays blank */ }
-    finally { setPreviewLoading(false); }
+    } catch (e) {
+      console.error('[NCR preview] fetch failed:', e);
+    } finally {
+      setPreviewLoading(false);
+    }
   }
 
   function openEdit(ncr: CorrectiveAction) {
@@ -275,9 +284,11 @@ export default function DashboardPage() {
         // Fetch the final NCR number from the server at save time.
         // The server always reads from the DB, so this is safe even when multiple
         // tabs or users are creating NCRs simultaneously.
-        const numRes = await fetch('/api/ncr-number');
+        const numRes = await fetch('/api/ncr-number', { cache: 'no-store' });
         if (!numRes.ok) throw new Error('ไม่สามารถสร้างหมายเลข NCR ได้ กรุณาลองใหม่อีกครั้ง');
-        const { ncrNumber } = await numRes.json() as { ncrNumber: string };
+        const numJson = await numRes.json() as { ncrNumber: string; debug?: unknown };
+        console.log('[NCR save] API response:', numJson);
+        const { ncrNumber } = numJson;
         record = {
           id: uid(),
           checklistItemId: '',

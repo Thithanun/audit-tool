@@ -1,15 +1,8 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
-// Force this route to always run dynamically — never let Next.js cache it.
+// Force dynamic so Next.js / CDN never serves a stale cached response.
 export const dynamic = 'force-dynamic';
-
-// ── Server-side Supabase client ───────────────────────────────────────────────
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-);
 
 /**
  * GET /api/ncr-number
@@ -17,17 +10,48 @@ const supabase = createClient(
  * Returns the next available NCR number for the current CE year.
  * Format: NCRyyNNN  (yy = 2-digit CE year, NNN = 3-digit sequence)
  *
- *   NCR26001 → NCR26002 → NCR26003 …   (within 2026)
- *   NCR27001 → NCR27002 …              (year rolls over → restart at 001)
+ * Uses createServerClient (not createBrowserClient) so that the user's
+ * session cookies are forwarded to Supabase — this lets the query pass
+ * RLS policies that require auth.uid() to be set.
+ *
+ * The previous approach used createClient (anonymous) which returned
+ * totalRows: 0 because RLS blocked all rows for unauthenticated requests.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const year   = new Date().getFullYear();
   const yy     = String(year).slice(-2);  // "26" for 2026
   const prefix = `NCR${yy}`;             // "NCR26"
 
-  // Fetch ALL corrective_actions — no JSONB filter (Supabase PostgREST does
-  // not support `like` on data->>field reliably).  An audit tool's record
-  // count is small enough that this is never a bottleneck.
+  // ── Build an authenticated Supabase client ──────────────────────────────
+  // Forward every cookie from the browser request so Supabase can validate
+  // the user's session and apply RLS correctly.
+  const cookieHeader = request.headers.get('cookie') ?? '';
+
+  // Parse "name=value; name2=value2" into the array shape @supabase/ssr expects.
+  const parsedCookies = cookieHeader
+    .split(';')
+    .map(c => c.trim())
+    .filter(Boolean)
+    .map(c => {
+      const eqIdx = c.indexOf('=');
+      return eqIdx === -1
+        ? { name: c, value: '' }
+        : { name: c.slice(0, eqIdx), value: c.slice(eqIdx + 1) };
+    });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+    {
+      cookies: {
+        getAll: () => parsedCookies,
+        setAll: () => {}, // read-only — we never need to refresh tokens here
+      },
+    },
+  );
+
+  // ── Query ────────────────────────────────────────────────────────────────
   const { data, error } = await supabase
     .from('corrective_actions')
     .select('id, data');
@@ -58,23 +82,13 @@ export async function GET() {
   const nnn       = String(maxSeq + 1).padStart(3, '0');
   const ncrNumber = `${prefix}${nnn}`;
 
-  // ── Debug info (included in every response so the client can log it) ──────
-  const debug = {
-    year,
-    prefix,
-    totalRows: total,
-    thisYearNcrs,   // all NCR numbers found for this year
-    maxSeq,
-    next: ncrNumber,
-  };
-
+  const debug = { year, prefix, totalRows: total, thisYearNcrs, maxSeq, next: ncrNumber };
   console.log('[ncr-number]', JSON.stringify(debug));
 
   return NextResponse.json(
     { ncrNumber, debug },
     {
       headers: {
-        // Tell every cache layer (CDN, browser, Next.js) not to store this.
         'Cache-Control': 'no-store, no-cache, must-revalidate',
         'Pragma': 'no-cache',
       },

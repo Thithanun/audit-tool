@@ -23,6 +23,46 @@ export type SessionStatus = 'Planned' | 'In Progress' | 'Completed';
 
 export type CorrectiveActionStatus = 'Open' | 'In Progress' | 'Closed' | 'Overdue';
 
+/** NCR 5-step workflow status */
+export type NcrWorkflowStatus =
+  | 'เปิด'        // NCR created, waiting for Auditee to fill plan (step 2)
+  | 'รอ Auditee'  // Plan was rejected, waiting for Auditee to re-fill (step 2)
+  | 'รอ Auditor'  // Auditee submitted plan, waiting for Auditor review (step 3)
+  | 'กำลังแก้ไข'  // Plan approved, Auditee implementing & reporting results (step 4)
+  | 'รอปิด NCR'   // Results submitted, waiting for Auditor to close (step 5)
+  | 'ปิดแล้ว';    // NCR closed
+
+/** Section 2 data — filled by Auditee (root cause + corrective plan) */
+export interface NcrSection2Data {
+  rootCause: string;
+  correctiveAction: string;
+  preventiveAction: string;
+  dueDate: string;
+  owner: string;
+  submittedAt?: string;
+}
+
+/** Section 3 data — filled by Auditor (review plan) */
+export interface NcrSection3Data {
+  approved: boolean;
+  reviewNotes: string;
+  reviewedAt?: string;
+}
+
+/** Section 4 data — filled by Auditee (implementation results + evidence) */
+export interface NcrSection4Data {
+  results: string;
+  evidence: string;
+  completedDate?: string;
+  submittedAt?: string;
+}
+
+/** Section 5 data — filled by Auditor (final closure) */
+export interface NcrSection5Data {
+  closureNotes: string;
+  closedAt?: string;
+}
+
 export type ReportStatus = 'draft' | 'in_review' | 'approved';
 
 export interface AuditPlan {
@@ -123,12 +163,19 @@ export interface CorrectiveAction {
   createdAt: string;
   updatedAt: string;
   // NCR Management fields — optional, only present on standalone NCRs
-  ncrNumber?: string;         // เลขที่ NCR เช่น NCR26001 (NCRXXYYY: XX=ปี, YYY=ลำดับ)
+  ncrNumber?: string;         // เลขที่ NCR เช่น NCR69001 (NCRyyYYY: yy=ปีพุทธ 2 หลัก, YYY=ลำดับ)
   ncrType?: 'NC-Major' | 'NC-Minor' | 'OBS' | 'OFI'; // ประเภท NCR
   impact?: string;            // ผลกระทบ (Auditor fills)
   recommendation?: string;    // ข้อเสนอแนะ (Auditor fills)
-  correctiveAction?: string;  // แนวทางแก้ไข (Auditee fills)
-  preventiveAction?: string;  // แนวทางป้องกัน (Auditee fills)
+  correctiveAction?: string;  // แนวทางแก้ไข (Auditee fills) — legacy field, see ncrSection2
+  preventiveAction?: string;  // แนวทางป้องกัน (Auditee fills) — legacy field, see ncrSection2
+  // 5-step NCR workflow
+  ncrWorkflowStatus?: NcrWorkflowStatus;  // current workflow status
+  ncrCurrentStep?: number;                // 1–5, which step the NCR is currently on
+  ncrSection2?: NcrSection2Data;          // Auditee corrective plan
+  ncrSection3?: NcrSection3Data;          // Auditor plan review
+  ncrSection4?: NcrSection4Data;          // Auditee implementation results
+  ncrSection5?: NcrSection5Data;          // Auditor final closure
 }
 
 export interface ClauseTemplate {

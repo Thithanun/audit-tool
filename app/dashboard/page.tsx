@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
-import type { AuditPlan, ChecklistItem, CorrectiveAction, CorrectiveActionStatus, FindingStatus, PlanSession } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, CorrectiveAction, CorrectiveActionStatus, FindingStatus, NcrWorkflowStatus, PlanSession } from '@/lib/types';
 import {
   getAuditPlans,
   getChecklistItems,
@@ -71,6 +72,25 @@ const NCR_STATUS_BADGE: Record<CorrectiveActionStatus, string> = {
   'Overdue':     'bg-red-50 text-red-800 border border-red-200',
 };
 
+// Workflow status labels/badges (new 5-step system)
+const WF_STATUS_LABEL: Record<NcrWorkflowStatus, string> = {
+  'เปิด':       'เปิด',
+  'รอ Auditee': 'รอ Auditee',
+  'รอ Auditor': 'รอ Auditor',
+  'กำลังแก้ไข': 'กำลังแก้ไข',
+  'รอปิด NCR':  'รอปิด NCR',
+  'ปิดแล้ว':   'ปิดแล้ว',
+};
+
+const WF_STATUS_BADGE: Record<NcrWorkflowStatus, string> = {
+  'เปิด':       'bg-amber-50 text-amber-800 border border-amber-200',
+  'รอ Auditee': 'bg-amber-50 text-amber-800 border border-amber-200',
+  'รอ Auditor': 'bg-blue-50 text-blue-800 border border-blue-200',
+  'กำลังแก้ไข': 'bg-indigo-50 text-indigo-800 border border-indigo-200',
+  'รอปิด NCR':  'bg-purple-50 text-purple-800 border border-purple-200',
+  'ปิดแล้ว':   'bg-green-50 text-green-800 border border-green-200',
+};
+
 // ── NCR Modal context type ────────────────────────────────────────────────────
 
 type NcrModalCtx =
@@ -97,6 +117,7 @@ const BLANK: Partial<CorrectiveAction> = {
 
 export default function DashboardPage() {
   const { canEditDashboard: canEdit } = useAuth();
+  const router = useRouter();
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -231,8 +252,8 @@ export default function DashboardPage() {
   }
 
   function openEdit(ncr: CorrectiveAction) {
-    setNcrForm({ ...ncr });
-    setNcrModal({ mode: 'edit', ncr });
+    // Navigate to the dedicated 5-step NCR workflow page
+    router.push(`/ncr/${ncr.id}`);
   }
 
   async function handleSave(action: 'save' | 'submit' | 'approve') {
@@ -252,9 +273,9 @@ export default function DashboardPage() {
           ncrNumber,
           clauseRef:        ncrForm.clauseRef ?? '',
           description:      ncrForm.description ?? '',
-          rootCause:        ncrForm.rootCause ?? '',
-          owner:            ncrForm.owner ?? '',
-          dueDate:          ncrForm.dueDate ?? '',
+          rootCause:        '',
+          owner:            '',
+          dueDate:          '',
           status:           'Open',
           closureNotes:     '',
           createdAt:        now,
@@ -262,9 +283,17 @@ export default function DashboardPage() {
           ncrType:          ncrForm.ncrType,
           impact:           ncrForm.impact,
           recommendation:   ncrForm.recommendation,
-          correctiveAction: ncrForm.correctiveAction,
-          preventiveAction: ncrForm.preventiveAction,
+          correctiveAction: '',
+          preventiveAction: '',
+          // 5-step workflow — Section 1 is complete (Auditor just created the NCR)
+          ncrCurrentStep:     2,
+          ncrWorkflowStatus:  'เปิด',
         };
+        // After creating, navigate to the NCR detail page
+        await saveCorrectiveAction(record);
+        setNcrModal(null);
+        router.push(`/ncr/${record.id}`);
+        return; // skip the generic save + reload below
       } else {
         const base = (ncrModal as { mode: 'edit'; ncr: CorrectiveAction }).ncr;
         let status: CorrectiveActionStatus = base.status;
@@ -300,14 +329,8 @@ export default function DashboardPage() {
   if (dbError)  return <DbError message={dbError} onRetry={reload} />;
 
   // ── Modal context (safe after early returns) ──────────────────────────────
-
-  const editNcr      = ncrModal?.mode === 'edit' ? ncrModal.ncr : null;
-  // Viewer can fill auditee plan only when NCR is still Open
-  const isAuditeeMode = !canEdit && editNcr?.status === 'Open';
-  // Auditor can approve when NCR has been submitted
-  const canApprove    = canEdit && editNcr?.status === 'In Progress';
-  // Viewer browsing a closed/submitted NCR — read-only
-  const isViewOnly    = !canEdit && editNcr !== null && editNcr.status !== 'Open';
+  // Note: edit mode is now handled by the dedicated /ncr/[id] page.
+  // The modal is only used for create mode.
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -547,9 +570,15 @@ export default function DashboardPage() {
                       )}
                     </td>
                     <td className="py-3 pr-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${NCR_STATUS_BADGE[ncr.status]}`}>
-                        {NCR_STATUS_LABEL[ncr.status]}
-                      </span>
+                      {ncr.ncrWorkflowStatus ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${WF_STATUS_BADGE[ncr.ncrWorkflowStatus]}`}>
+                          {WF_STATUS_LABEL[ncr.ncrWorkflowStatus]}
+                        </span>
+                      ) : (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${NCR_STATUS_BADGE[ncr.status]}`}>
+                          {NCR_STATUS_LABEL[ncr.status]}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-3">
@@ -559,7 +588,11 @@ export default function DashboardPage() {
                               onClick={() => openEdit(ncr)}
                               className="text-xs text-blue-600 hover:text-blue-800 font-medium hover:underline"
                             >
-                              {ncr.status === 'In Progress' ? 'ตรวจสอบ' : 'แก้ไข'}
+                              {ncr.ncrWorkflowStatus === 'รอ Auditor' || ncr.ncrWorkflowStatus === 'รอปิด NCR'
+                                ? 'ตรวจสอบ'
+                                : ncr.ncrWorkflowStatus === 'ปิดแล้ว'
+                                  ? 'ดู'
+                                  : 'แก้ไข'}
                             </button>
                             <button
                               onClick={() => setDeleteConfirm(ncr.id)}
@@ -568,19 +601,12 @@ export default function DashboardPage() {
                               ลบ
                             </button>
                           </>
-                        ) : ncr.status === 'Open' ? (
+                        ) : (
                           <button
                             onClick={() => openEdit(ncr)}
                             className="text-xs text-blue-600 hover:text-blue-800 font-medium hover:underline"
                           >
-                            กรอกแผน
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => openEdit(ncr)}
-                            className="text-xs text-slate-400 hover:text-slate-600"
-                          >
-                            ดู
+                            {ncr.ncrWorkflowStatus === 'ปิดแล้ว' ? 'ดู' : 'กรอก'}
                           </button>
                         )}
                       </div>
@@ -593,301 +619,123 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── NCR Create / Edit Modal ───────────────────────────────────────── */}
+      {/* ── NCR Create Modal ──────────────────────────────────────────────── */}
       <Modal
         open={!!ncrModal}
         onClose={() => setNcrModal(null)}
-        title={
-          ncrModal?.mode === 'create'
-            ? 'สร้าง NCR ใหม่'
-            : editNcr?.ncrType
-              ? `NCR — ${NCR_TYPE_LABEL[editNcr.ncrType as NcrType]} · ${editNcr.clauseRef || 'ไม่ระบุข้อกำหนด'}`
-              : 'NCR Detail'
-        }
+        title="สร้าง NCR ใหม่"
         size="lg"
       >
         <div className="space-y-5">
 
-          {/* ── NCR Number Preview (create mode only) ────────────────────── */}
-          {ncrModal?.mode === 'create' && (
-            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-              <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-              </svg>
-              <span className="text-xs text-slate-500">หมายเลข NCR ที่จะได้รับ</span>
-              <span className="font-mono text-sm font-bold bg-slate-800 text-white px-3 py-1 rounded tracking-widest ml-auto">
-                {previewNcrNumber}
-              </span>
-            </div>
-          )}
+          {/* NCR Number Preview */}
+          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+            <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+            </svg>
+            <span className="text-xs text-slate-500">หมายเลข NCR ที่จะได้รับ</span>
+            <span className="font-mono text-sm font-bold bg-slate-800 text-white px-3 py-1 rounded tracking-widest ml-auto">
+              {previewNcrNumber}
+            </span>
+          </div>
 
-          {/* ── Section 1: NCR Details (Auditor fills) ───────────────────── */}
+          {/* Section 1: NCR Details (Auditor fills) */}
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-              รายละเอียด NCR
-              <span className="ml-2 font-normal normal-case tracking-normal">(กรอกโดยผู้ตรวจสอบ)</span>
+            <p className="text-xs font-semibold text-[#3C3489] uppercase tracking-wide mb-3">
+              ส่วนที่ 1 — รายละเอียด NCR
+              <span className="ml-2 font-normal normal-case tracking-normal text-slate-400">(กรอกโดยผู้ตรวจสอบ)</span>
             </p>
             <div className="space-y-3">
 
               {/* ประเภท NCR */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">ประเภท NCR</label>
-                {canEdit ? (
-                  <div className="flex gap-2">
-                    {NCR_TYPES.map(t => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setNcrForm(f => ({ ...f, ncrType: t }))}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                          ncrForm.ncrType === t
-                            ? NCR_TYPE_BADGE[t] + ' ring-2 ring-offset-1 ring-blue-400'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {NCR_TYPE_LABEL[t]}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${editNcr?.ncrType ? NCR_TYPE_BADGE[editNcr.ncrType as NcrType] : 'text-slate-400'}`}>
-                    {editNcr?.ncrType ? NCR_TYPE_LABEL[editNcr.ncrType as NcrType] : '—'}
-                  </span>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  {NCR_TYPES.map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setNcrForm(f => ({ ...f, ncrType: t }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        ncrForm.ncrType === t
+                          ? NCR_TYPE_BADGE[t] + ' ring-2 ring-offset-1 ring-[#3C3489]'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {NCR_TYPE_LABEL[t]}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* ข้อกำหนด ISO */}
+              {/* ข้อกำหนด */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">ข้อกำหนด ISO</label>
-                {canEdit ? (
-                  <input
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="เช่น A.9.1.1, 6.1.2"
-                    value={ncrForm.clauseRef ?? ''}
-                    onChange={e => setNcrForm(f => ({ ...f, clauseRef: e.target.value }))}
-                  />
-                ) : (
-                  <p className="text-sm text-slate-700 font-mono bg-slate-50 rounded-lg px-3 py-2">{editNcr?.clauseRef || '—'}</p>
-                )}
+                <label className="block text-sm font-medium text-slate-700 mb-1">ข้อกำหนด</label>
+                <input
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3C3489]"
+                  placeholder="เช่น A.9.1.1, 6.1.2"
+                  value={ncrForm.clauseRef ?? ''}
+                  onChange={e => setNcrForm(f => ({ ...f, clauseRef: e.target.value }))}
+                />
               </div>
 
               {/* รายละเอียด NCR */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">รายละเอียด NCR</label>
-                {canEdit ? (
-                  <textarea
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    rows={3}
-                    placeholder="อธิบายข้อบกพร่องที่พบ..."
-                    value={ncrForm.description ?? ''}
-                    onChange={e => setNcrForm(f => ({ ...f, description: e.target.value }))}
-                  />
-                ) : (
-                  <p className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2 leading-relaxed">{editNcr?.description || '—'}</p>
-                )}
+                <textarea
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3C3489] resize-none"
+                  rows={3}
+                  placeholder="อธิบายข้อบกพร่องที่พบ..."
+                  value={ncrForm.description ?? ''}
+                  onChange={e => setNcrForm(f => ({ ...f, description: e.target.value }))}
+                />
               </div>
 
               {/* ผลกระทบ */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">ผลกระทบ</label>
-                {canEdit ? (
-                  <textarea
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    rows={2}
-                    placeholder="ผลกระทบต่อองค์กรหรือการดำเนินงาน..."
-                    value={ncrForm.impact ?? ''}
-                    onChange={e => setNcrForm(f => ({ ...f, impact: e.target.value }))}
-                  />
-                ) : (
-                  <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">{editNcr?.impact || '—'}</p>
-                )}
+                <textarea
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3C3489] resize-none"
+                  rows={2}
+                  placeholder="ผลกระทบต่อองค์กรหรือการดำเนินงาน..."
+                  value={ncrForm.impact ?? ''}
+                  onChange={e => setNcrForm(f => ({ ...f, impact: e.target.value }))}
+                />
               </div>
 
               {/* ข้อเสนอแนะ */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">ข้อเสนอแนะจากผู้ตรวจสอบ</label>
-                {canEdit ? (
-                  <textarea
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    rows={2}
-                    placeholder="ข้อเสนอแนะการแก้ไข..."
-                    value={ncrForm.recommendation ?? ''}
-                    onChange={e => setNcrForm(f => ({ ...f, recommendation: e.target.value }))}
-                  />
-                ) : (
-                  <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">{editNcr?.recommendation || '—'}</p>
-                )}
+                <textarea
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3C3489] resize-none"
+                  rows={2}
+                  placeholder="ข้อเสนอแนะการแก้ไข..."
+                  value={ncrForm.recommendation ?? ''}
+                  onChange={e => setNcrForm(f => ({ ...f, recommendation: e.target.value }))}
+                />
               </div>
             </div>
           </div>
 
-          {/* ── Section 2: Auditee Plan (shown in edit mode only) ────────── */}
-          {ncrModal?.mode === 'edit' && (
-            <div className={`border rounded-xl p-4 ${
-              isAuditeeMode
-                ? 'border-blue-200 bg-blue-50/30'
-                : 'border-slate-200 bg-slate-50/30'
-            }`}>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-                แผนแก้ไข
-                <span className="ml-2 font-normal normal-case tracking-normal">(กรอกโดยผู้รับการตรวจ)</span>
-              </p>
-
-              {isViewOnly ? (
-                // Viewer on a submitted/approved NCR — read-only display
-                <div className="space-y-2 text-sm text-slate-600">
-                  <p><span className="font-medium text-slate-700">วิเคราะห์สาเหตุ:</span> {editNcr?.rootCause || '—'}</p>
-                  <p><span className="font-medium text-slate-700">แนวทางแก้ไข:</span> {editNcr?.correctiveAction || '—'}</p>
-                  <p><span className="font-medium text-slate-700">แนวทางป้องกัน:</span> {editNcr?.preventiveAction || '—'}</p>
-                  <p><span className="font-medium text-slate-700">วันที่แล้วเสร็จ:</span> {editNcr?.dueDate || '—'}</p>
-                  <p><span className="font-medium text-slate-700">ผู้รับผิดชอบ:</span> {editNcr?.owner || '—'}</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* วิเคราะห์สาเหตุ */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">วิเคราะห์สาเหตุ (Root Cause)</label>
-                    <textarea
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      rows={2}
-                      placeholder="วิเคราะห์สาเหตุที่แท้จริงของปัญหา..."
-                      value={ncrForm.rootCause ?? ''}
-                      onChange={e => setNcrForm(f => ({ ...f, rootCause: e.target.value }))}
-                    />
-                  </div>
-                  {/* แนวทางแก้ไข */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">แนวทางแก้ไข</label>
-                    <textarea
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      rows={2}
-                      placeholder="มาตรการแก้ไขที่จะดำเนินการ..."
-                      value={ncrForm.correctiveAction ?? ''}
-                      onChange={e => setNcrForm(f => ({ ...f, correctiveAction: e.target.value }))}
-                    />
-                  </div>
-                  {/* แนวทางป้องกัน */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">แนวทางป้องกัน</label>
-                    <textarea
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      rows={2}
-                      placeholder="มาตรการป้องกันไม่ให้เกิดซ้ำ..."
-                      value={ncrForm.preventiveAction ?? ''}
-                      onChange={e => setNcrForm(f => ({ ...f, preventiveAction: e.target.value }))}
-                    />
-                  </div>
-                  {/* วันที่ + ผู้รับผิดชอบ */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">วันที่แล้วเสร็จ</label>
-                      <input
-                        type="date"
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={ncrForm.dueDate ?? ''}
-                        onChange={e => setNcrForm(f => ({ ...f, dueDate: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">ผู้รับผิดชอบ</label>
-                      <input
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="ชื่อผู้รับผิดชอบ"
-                        value={ncrForm.owner ?? ''}
-                        onChange={e => setNcrForm(f => ({ ...f, owner: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Section 3: Approval notes (shown when auditor can approve) ── */}
-          {canApprove && (
-            <div className="border border-green-200 bg-green-50/30 rounded-xl p-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-                หมายเหตุการอนุมัติ
-              </p>
-              <textarea
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={2}
-                placeholder="หมายเหตุ / เงื่อนไขการอนุมัติ (optional)"
-                value={ncrForm.closureNotes ?? ''}
-                onChange={e => setNcrForm(f => ({ ...f, closureNotes: e.target.value }))}
-              />
-            </div>
-          )}
-
-          {/* ── Buttons ───────────────────────────────────────────────────── */}
+          {/* Buttons */}
           <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-            {/* Delete — auditor, edit mode only */}
-            {canEdit && ncrModal?.mode === 'edit' && (
-              <button
-                type="button"
-                onClick={() => { setDeleteConfirm(editNcr!.id); setNcrModal(null); }}
-                className="text-xs text-red-500 hover:text-red-700 px-3 py-2 rounded-lg border border-red-200 hover:bg-red-50 transition-colors"
-              >
-                ลบ NCR
-              </button>
-            )}
             <div className="flex-1" />
             <button
               type="button"
               onClick={() => setNcrModal(null)}
               className="border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors"
             >
-              {isViewOnly ? 'ปิด' : 'ยกเลิก'}
+              ยกเลิก
             </button>
-
-            {/* Create NCR */}
-            {ncrModal?.mode === 'create' && (
-              <button
-                type="button"
-                disabled={ncrSaving}
-                onClick={() => handleSave('save')}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                {ncrSaving ? 'กำลังบันทึก…' : 'สร้าง NCR'}
-              </button>
-            )}
-
-            {/* Save (auditor editing, not approving) */}
-            {ncrModal?.mode === 'edit' && canEdit && (
-              <button
-                type="button"
-                disabled={ncrSaving}
-                onClick={() => handleSave('save')}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                {ncrSaving ? 'กำลังบันทึก…' : 'บันทึก'}
-              </button>
-            )}
-
-            {/* Approve (auditor reviewing submitted plan) */}
-            {canApprove && (
-              <button
-                type="button"
-                disabled={ncrSaving}
-                onClick={() => handleSave('approve')}
-                className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                {ncrSaving ? 'กำลังบันทึก…' : '✓ อนุมัติ'}
-              </button>
-            )}
-
-            {/* Submit plan (viewer/auditee on Open NCR) */}
-            {isAuditeeMode && (
-              <button
-                type="button"
-                disabled={ncrSaving}
-                onClick={() => handleSave('submit')}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                {ncrSaving ? 'กำลังส่ง…' : 'ส่งแผนแก้ไข'}
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={ncrSaving}
+              onClick={() => handleSave('save')}
+              className="bg-[#3C3489] hover:bg-[#2e2870] disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              {ncrSaving ? 'กำลังบันทึก…' : 'สร้าง NCR →'}
+            </button>
           </div>
         </div>
       </Modal>

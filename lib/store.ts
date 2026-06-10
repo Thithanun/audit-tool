@@ -376,17 +376,17 @@ export async function deleteStandard(id: string): Promise<void> {
 // ── NCR Number Generator ──────────────────────────────────────────────────────
 
 /**
- * Generate the next available NCR number for the current year.
- * Format: NCRXXYYY  where XX = 2-digit year (e.g. "26" for 2026)
+ * Generate the next available NCR number for the current Thai Buddhist Era year.
+ * Format: NCRyyYYY  where yy  = 2-digit Buddhist Era year (e.g. "69" for 2569 / 2026 CE)
  *                         YYY = zero-padded 3-digit sequence (001, 002, …)
  *
  * Pass the full list of existing NCR CorrectiveActions so the function can
  * find the highest sequence already used this year and increment it.
  */
 export function generateNcrNumber(existingNcrs: CorrectiveAction[]): string {
-  const year = new Date().getFullYear();
-  const xx     = String(year).slice(-2);          // "26"
-  const prefix = `NCR${xx}`;                      // "NCR26"
+  const buddhistYear = new Date().getFullYear() + 543; // CE → BE  (2026 → 2569)
+  const yy     = String(buddhistYear).slice(-2);       // "69"
+  const prefix = `NCR${yy}`;                           // "NCR69"
   let maxSeq = 0;
   for (const ncr of existingNcrs) {
     if (ncr.ncrNumber?.startsWith(prefix)) {
@@ -396,6 +396,22 @@ export function generateNcrNumber(existingNcrs: CorrectiveAction[]): string {
   }
   const yyy = String(maxSeq + 1).padStart(3, '0');
   return `${prefix}${yyy}`;
+}
+
+/** Fetch a single CorrectiveAction by its UUID.  Returns null when not found. */
+export async function getCorrectiveActionById(id: string): Promise<CorrectiveAction | null> {
+  // Re-use list cache if available — avoids a round-trip on the detail page.
+  const listCached = hit(qc.correctiveActions);
+  if (listCached) return listCached.find(ca => ca.id === id) ?? null;
+
+  const { data, error } = await withTimeout(
+    supabase.from('corrective_actions').select('id, data').eq('id', id).single(),
+  );
+  if (error) {
+    if (error.code === 'PGRST116') return null; // not found
+    throw pgErr(error);
+  }
+  return fromRow<CorrectiveAction>(data as DataRow);
 }
 
 // ── Standard Versions & Clauses ───────────────────────────────────────────────

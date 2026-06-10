@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus } from '@/lib/types';
+import type { AuditPlan, ChecklistItem, PlanSession, SessionStatus, StandardVersion, DbClause } from '@/lib/types';
 import {
   getAuditPlanById,
   saveAuditPlan,
@@ -14,12 +14,15 @@ import {
   deletePlanSession,
   getChecklistBySession,
   computeSessionProgress,
+  getStandardVersions,
+  getDbClauses,
+  groupDbClauses,
   uid,
 } from '@/lib/store';
-import { ISMS_CLAUSES, ISO27001_CLAUSES } from '@/lib/seed-data';
 import StatusBadge, { SESSION_STATUSES } from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 import PageLoader, { DbError } from '@/components/PageLoader';
+import VersionBadge from '@/components/VersionBadge';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -39,18 +42,7 @@ function dayDate(startDate: string, day: number): string {
   return d.toISOString().split('T')[0];
 }
 
-// ── Clause groups ─────────────────────────────────────────────────────────────
-
-interface ClauseOption { ref: string; title: string }
-interface ClauseGroup  { label: string; clauses: ClauseOption[] }
-
-const CLAUSE_GROUPS: ClauseGroup[] = [
-  { label: 'ISMS Requirements (Clause 4–10)', clauses: ISMS_CLAUSES.map(c => ({ ref: c.clauseRef, title: c.clauseTitle })) },
-  { label: 'Annex A – Organizational Controls (A.5)', clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.5.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })) },
-  { label: 'Annex A – People Controls (A.6)',         clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.6.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })) },
-  { label: 'Annex A – Physical Controls (A.7)',       clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.7.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })) },
-  { label: 'Annex A – Technological Controls (A.8)', clauses: ISO27001_CLAUSES.filter(c => c.clauseRef.startsWith('A.8.')).map(c => ({ ref: c.clauseRef, title: c.clauseTitle })) },
-];
+// Clause groups are now loaded from the DB — see pickerGroups state below.
 
 function emptySession(planId: string, nextDay = 1, date = ''): Omit<PlanSession, 'id' | 'createdAt'> {
   return { planId, day: nextDay, date, time: '', areaOfAudit: '', relatedClauses: [], auditee: '', mainAuditor: '', iaTeam: [] };
@@ -81,19 +73,35 @@ export default function PlanDetailPage() {
   const [deletePlanConfirm, setDeletePlanConfirm] = useState(false);
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
 
+  // ── Standard version clause picker ───────────────────────────────────────────
+  const [standardVersions, setStandardVersions] = useState<StandardVersion[]>([]);
+  const [pickerVersionId, setPickerVersionId] = useState<string>('');
+  const [pickerGroups, setPickerGroups] = useState<Record<string, DbClause[]>>({});
+  const [pickerLoading, setPickerLoading] = useState(false);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setDbError(null);
     try {
-      const [found, ss, items] = await Promise.all([
+      const [found, ss, items, versions] = await Promise.all([
         getAuditPlanById(id),
         getPlanSessions(id),
         getChecklistBySession(id),
+        getStandardVersions(),
       ]);
       if (!found) { setNotFound(true); return; }
       setPlan(found);
       setSessions(ss); // getPlanSessions already sorts by date → day → start time
       setPlanItems(items);
+      setStandardVersions(versions);
+      // Set a sensible default picker version (ISO 27001:2022 first, otherwise first available).
+      // Use the functional updater so we never override a version the user has already chosen.
+      if (versions.length > 0) {
+        setPickerVersionId(prev => {
+          if (prev) return prev;
+          return (versions.find(v => v.standard_name === 'ISO 27001') ?? versions[0]).id;
+        });
+      }
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
@@ -103,6 +111,21 @@ export default function PlanDetailPage() {
 
   useEffect(() => { reload(); }, [reload]);
   useVisibilityRefresh(reload); // re-fetch when user switches back to this tab
+
+  // Load clauses from DB whenever the picker version changes.
+  useEffect(() => {
+    if (!pickerVersionId) return;
+    let cancelled = false;
+    setPickerLoading(true);
+    getDbClauses(pickerVersionId).then(clauses => {
+      if (cancelled) return;
+      setPickerGroups(groupDbClauses(clauses));
+      setPickerLoading(false);
+    }).catch(() => {
+      if (!cancelled) setPickerLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [pickerVersionId]);
 
   // ── plan edit ────────────────────────────────────────────────────────────────
 
@@ -146,6 +169,8 @@ export default function PlanDetailPage() {
     setEditSession(null);
     setSessionForm(emptySession(plan.id, nextDay, dayDate(plan.startDate, nextDay)));
     setIaInput('');
+    // Always reset to the latest active version (first in the list, sorted newest-first).
+    setPickerVersionId(standardVersions.length > 0 ? standardVersions[0].id : '');
     setSessionModal(true);
   }
 
@@ -155,8 +180,13 @@ export default function PlanDetailPage() {
       planId: s.planId, day: s.day, date: s.date, time: s.time,
       areaOfAudit: s.areaOfAudit, relatedClauses: s.relatedClauses,
       auditee: s.auditee, mainAuditor: s.mainAuditor, iaTeam: [...s.iaTeam],
+      standardVersionId: s.standardVersionId,
     });
     setIaInput('');
+    // Restore the version saved with this session; fall back to latest for legacy sessions.
+    setPickerVersionId(
+      s.standardVersionId ?? (standardVersions.length > 0 ? standardVersions[0].id : ''),
+    );
     setSessionModal(true);
   }
 
@@ -182,9 +212,10 @@ export default function PlanDetailPage() {
     e.preventDefault();
     try {
       const now = new Date().toISOString();
+      const formWithVersion = { ...sessionForm, standardVersionId: pickerVersionId || undefined };
       await savePlanSession(editSession
-        ? { ...editSession, ...sessionForm }
-        : { id: uid(), createdAt: now, ...sessionForm },
+        ? { ...editSession, ...formWithVersion }
+        : { id: uid(), createdAt: now, ...formWithVersion },
       );
       setSessionModal(false);
       await reload();
@@ -211,6 +242,26 @@ export default function PlanDetailPage() {
     byDay[s.day].push(s);
   }
   const sortedDays = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+
+  // ── version badge helpers ─────────────────────────────────────────────────────
+
+  // O(1) lookup for version badge labels.
+  const versionsMap = useMemo(
+    () => new Map(standardVersions.map(v => [v.id, v])),
+    [standardVersions],
+  );
+
+  /** Derive Framework from a session's standardVersionId, falling back to clauseRef heuristics. */
+  function sessionFramework(s: PlanSession): 'ISO27001' | 'NIST_CSF' {
+    if (s.standardVersionId) {
+      const v = versionsMap.get(s.standardVersionId);
+      if (v) return v.standard_name.includes('NIST') ? 'NIST_CSF' : 'ISO27001';
+    }
+    // Heuristic for legacy sessions (no standardVersionId stored)
+    const nistPrefixes = ['GV.', 'ID.', 'PR.', 'DE.', 'RS.', 'RC.'];
+    const firstClause = s.relatedClauses[0] ?? '';
+    return nistPrefixes.some(p => firstClause.startsWith(p)) ? 'NIST_CSF' : 'ISO27001';
+  }
 
   // ── render ────────────────────────────────────────────────────────────────────
 
@@ -361,7 +412,20 @@ export default function PlanDetailPage() {
                       <td className="px-4 py-3">
                         <div className="text-slate-800 font-medium">{s.areaOfAudit || '—'}</div>
                         {s.relatedClauses.length > 0 && (
-                          <div className="text-xs text-slate-400 mt-0.5">Clauses: {s.relatedClauses.join(', ')}</div>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {s.relatedClauses.map(ref => (
+                              <span key={ref} className="inline-flex items-center gap-1">
+                                <span className="font-mono text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
+                                  {ref}
+                                </span>
+                                <VersionBadge
+                                  framework={sessionFramework(s)}
+                                  standardVersionId={s.standardVersionId}
+                                  versionsMap={versionsMap}
+                                />
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-slate-600">{s.auditee || '—'}</td>
@@ -489,6 +553,33 @@ export default function PlanDetailPage() {
               placeholder="e.g., IT Infrastructure" value={sessionForm.areaOfAudit}
               onChange={e => setSessionForm(f => ({ ...f, areaOfAudit: e.target.value }))} />
           </div>
+
+          {/* ── Standard Version ───────────────────────────────────────────────── */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              มาตรฐานที่ตรวจ (Standard Version)
+            </label>
+            {standardVersions.length === 0 ? (
+              <div className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-400 bg-slate-50">
+                กำลังโหลด…
+              </div>
+            ) : (
+              <select
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                value={pickerVersionId}
+                onChange={e => {
+                  setPickerVersionId(e.target.value);
+                  setSessionForm(f => ({ ...f, relatedClauses: [] })); // clear clause selection when switching version
+                }}
+              >
+                {standardVersions.map(v => (
+                  <option key={v.id} value={v.id}>{v.standard_name} · {v.version}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* ── Clause picker ──────────────────────────────────────────────────── */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-sm font-medium text-slate-700">Clause ที่เกี่ยวข้อง (Related Clauses)</label>
@@ -496,37 +587,44 @@ export default function PlanDetailPage() {
                 <span className="text-xs text-blue-600 font-medium">{sessionForm.relatedClauses.length} selected</span>
               )}
             </div>
+
             <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-64 overflow-y-auto bg-slate-50">
-              {CLAUSE_GROUPS.map(group => {
-                const groupRefs = group.clauses.map(c => c.ref);
-                return (
-                  <div key={group.label} className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{group.label}</span>
-                      <div className="flex gap-3">
-                        <button type="button" onClick={() => selectAllGroup(groupRefs)}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium">Select all</button>
-                        <button type="button" onClick={() => clearGroup(groupRefs)}
-                          className="text-xs text-slate-400 hover:text-slate-600">Clear</button>
+              {pickerLoading ? (
+                <div className="p-4 text-center text-xs text-slate-400">Loading clauses…</div>
+              ) : Object.keys(pickerGroups).length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-400">No clauses available</div>
+              ) : (
+                Object.entries(pickerGroups).map(([groupLabel, clauses]) => {
+                  const groupRefs = clauses.map(c => c.clause_ref);
+                  return (
+                    <div key={groupLabel} className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{groupLabel}</span>
+                        <div className="flex gap-3">
+                          <button type="button" onClick={() => selectAllGroup(groupRefs)}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium">Select all</button>
+                          <button type="button" onClick={() => clearGroup(groupRefs)}
+                            className="text-xs text-slate-400 hover:text-slate-600">Clear</button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                        {clauses.map(c => (
+                          <label key={c.clause_ref} className="flex items-start gap-1.5 cursor-pointer hover:bg-white rounded px-1 py-0.5 transition-colors">
+                            <input type="checkbox"
+                              className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                              checked={sessionForm.relatedClauses.includes(c.clause_ref)}
+                              onChange={() => toggleClause(c.clause_ref)} />
+                            <span className="text-xs leading-tight">
+                              <span className="font-mono font-semibold text-slate-700">{c.clause_ref}</span>{' '}
+                              <span className="text-slate-500">{c.clause_title}</span>
+                            </span>
+                          </label>
+                        ))}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                      {group.clauses.map(c => (
-                        <label key={c.ref} className="flex items-start gap-1.5 cursor-pointer hover:bg-white rounded px-1 py-0.5 transition-colors">
-                          <input type="checkbox"
-                            className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
-                            checked={sessionForm.relatedClauses.includes(c.ref)}
-                            onChange={() => toggleClause(c.ref)} />
-                          <span className="text-xs leading-tight">
-                            <span className="font-mono font-semibold text-slate-700">{c.ref}</span>{' '}
-                            <span className="text-slate-500">{c.title}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

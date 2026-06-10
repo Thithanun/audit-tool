@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useVisibilityRefresh } from '@/hooks/useVisibilityRefresh';
 import { useRouter } from 'next/navigation';
-import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures, ReportStatus } from '@/lib/types';
+import type { AuditPlan, CorrectiveAction, ReportSignature, ReportSignatures, ReportStatus, Framework } from '@/lib/types';
 import {
   getAuditPlans,
   getCorrectiveActions,
@@ -14,7 +14,15 @@ import {
   deleteReport,
 } from '@/lib/store';
 import PageLoader, { DbError } from '@/components/PageLoader';
+import VersionBadge from '@/components/VersionBadge';
 import { useAuth } from '@/contexts/AuthContext';
+
+// Derive ISO27001 vs NIST_CSF from the clause reference string.
+// NIST CSF 2.0 refs follow the pattern "XX.YY-NN" (e.g. GV.OC-01, ID.AM-02).
+const NIST_PREFIXES = ['GV.', 'ID.', 'PR.', 'DE.', 'RS.', 'RC.'];
+function clauseFramework(clauseRef: string): Framework {
+  return NIST_PREFIXES.some(p => clauseRef.startsWith(p)) ? 'NIST_CSF' : 'ISO27001';
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -257,8 +265,11 @@ function FindingCard({ finding: f, findingId }: FindingCardProps) {
           {NCR_LABEL[t]}
         </span>
         {f.clauseRef && (
-          <span className="font-mono text-xs text-slate-500 bg-white/80 border border-slate-200 px-2 py-0.5 rounded-md">
-            {f.clauseRef}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono text-xs text-slate-500 bg-white/80 border border-slate-200 px-2 py-0.5 rounded-md">
+              {f.clauseRef}
+            </span>
+            <VersionBadge framework={clauseFramework(f.clauseRef)} />
           </span>
         )}
       </div>

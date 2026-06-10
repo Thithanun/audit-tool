@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
 import type {
   AuditPlan, ChecklistItem, ChecklistTemplate, CorrectiveAction, PlanSession, ReportSignatures, ReportStatus, Standard,
+  StandardVersion, DbClause, Framework,
 } from './types';
+import { ISMS_CLAUSES, ISO27001_CLAUSES, NIST_CSF_CLAUSES } from './seed-data';
 
 export function uid(): string {
   return crypto.randomUUID();
@@ -75,6 +77,7 @@ const qc = {
   auditPlans:        null as CacheEntry<AuditPlan[]>        | null,
   checklistItems:    null as CacheEntry<ChecklistItem[]>     | null,
   correctiveActions: null as CacheEntry<CorrectiveAction[]>  | null,
+  standardVersions:  null as CacheEntry<StandardVersion[]>  | null,
 };
 
 /** Drop every cached entry immediately.
@@ -84,6 +87,7 @@ export function clearAllCaches(): void {
   qc.auditPlans        = null;
   qc.checklistItems    = null;
   qc.correctiveActions = null;
+  qc.standardVersions  = null;
 }
 
 // ── Audit Plans ───────────────────────────────────────────────────────────────
@@ -392,6 +396,185 @@ export function generateNcrNumber(existingNcrs: CorrectiveAction[]): string {
   }
   const yyy = String(maxSeq + 1).padStart(3, '0');
   return `${prefix}${yyy}`;
+}
+
+// ── Standard Versions & Clauses ───────────────────────────────────────────────
+// standard_versions + clauses tables use native columns (not the JSONB pattern).
+// ensureClausesSeeded() auto-populates both tables on first run so no manual
+// SQL inserts are needed when deploying.  Adding a future version (e.g. ISO 27001:2025)
+// is a pure INSERT — no code change required.
+
+let _seedDone = false;
+let _seedPromise: Promise<void> | null = null;
+
+/**
+ * Idempotent seeder.  Runs once per browser session (module-level flag).
+ * If the standard_versions table is empty it inserts ISO 27001:2022 and
+ * NIST CSF:2.0 plus all their clauses from seed-data.ts.
+ */
+export async function ensureClausesSeeded(): Promise<void> {
+  if (_seedDone) return;
+  if (_seedPromise) return _seedPromise;
+
+  _seedPromise = (async () => {
+    try {
+      // Check how many versions already exist.
+      const { count, error: countErr } = await supabase
+        .from('standard_versions')
+        .select('id', { count: 'exact', head: true });
+
+      if (countErr) {
+        // Table probably not created yet — skip silently so the rest of the app still works.
+        console.warn('[ensureClausesSeeded] standard_versions not available:', countErr.message);
+        return;
+      }
+
+      if ((count ?? 0) > 0) {
+        _seedDone = true;
+        return; // already seeded
+      }
+
+      // ── Insert standard versions ──────────────────────────────────────────
+      const { data: isoRow, error: isoVerErr } = await supabase
+        .from('standard_versions')
+        .insert({ standard_name: 'ISO 27001', version: '2022', is_active: true })
+        .select('id')
+        .single();
+      if (isoVerErr) throw pgErr(isoVerErr);
+
+      const { data: nistRow, error: nistVerErr } = await supabase
+        .from('standard_versions')
+        .insert({ standard_name: 'NIST CSF', version: '2.0', is_active: true })
+        .select('id')
+        .single();
+      if (nistVerErr) throw pgErr(nistVerErr);
+
+      // ── Insert ISO 27001:2022 clauses (ISMS + Annex A) ───────────────────
+      const isoClauses = [...ISMS_CLAUSES, ...ISO27001_CLAUSES].map((c, i) => ({
+        standard_version_id: isoRow.id,
+        clause_ref:   c.clauseRef,
+        clause_title: c.clauseTitle,
+        framework:    c.framework,
+        requirement:  c.requirement,
+        display_order: i,
+      }));
+
+      // Insert in chunks of 500 to stay under Supabase's request-body limit.
+      for (let i = 0; i < isoClauses.length; i += 500) {
+        const { error } = await supabase.from('clauses').insert(isoClauses.slice(i, i + 500));
+        if (error) throw pgErr(error);
+      }
+
+      // ── Insert NIST CSF 2.0 clauses ───────────────────────────────────────
+      const nistClauses = NIST_CSF_CLAUSES.map((c, i) => ({
+        standard_version_id: nistRow.id,
+        clause_ref:   c.clauseRef,
+        clause_title: c.clauseTitle,
+        framework:    c.framework,
+        requirement:  c.requirement,
+        display_order: i,
+      }));
+
+      const { error: nistClauseErr } = await supabase.from('clauses').insert(nistClauses);
+      if (nistClauseErr) throw pgErr(nistClauseErr);
+
+      _seedDone = true;
+    } catch (err) {
+      // Another tab may have won the race and inserted first — not fatal.
+      // We still mark done so we don't keep retrying on every call.
+      console.warn('[ensureClausesSeeded] seed error (may be duplicate race):', err);
+      _seedDone = true;
+    } finally {
+      _seedPromise = null;
+    }
+  })();
+
+  return _seedPromise;
+}
+
+/** Fetch all active standard versions from the DB (seeds first if needed). */
+export async function getStandardVersions(): Promise<StandardVersion[]> {
+  const cached = hit(qc.standardVersions);
+  if (cached) return cached;
+
+  await ensureClausesSeeded();
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('standard_versions')
+      .select('id, standard_name, version, is_active, effective_date, created_at')
+      .eq('is_active', true)
+      // Latest versions first: effective_date DESC (nulls last) → created_at DESC
+      // So when a future ISO 27001:2025 is inserted it automatically becomes the default.
+      .order('effective_date', { ascending: false, nullsFirst: false })
+      .order('created_at',     { ascending: false }),
+  );
+  if (error) throw pgErr(error);
+  const result = (data ?? []) as StandardVersion[];
+  qc.standardVersions = { data: result, at: Date.now() };
+  return result;
+}
+
+/** Fetch all clauses for a given standard version, sorted by display_order. */
+export async function getDbClauses(standardVersionId: string): Promise<DbClause[]> {
+  const { data, error } = await withTimeout(
+    supabase
+      .from('clauses')
+      .select('id, standard_version_id, clause_ref, clause_title, framework, requirement, display_order, created_at')
+      .eq('standard_version_id', standardVersionId)
+      .order('display_order'),
+  );
+  if (error) throw pgErr(error);
+  return (data ?? []) as DbClause[];
+}
+
+/**
+ * Group DB clauses by section label.
+ *
+ * ISO 27001: groups by Annex A section (A.5 / A.6 / A.7 / A.8) or ISMS (Clause 4-10).
+ * NIST CSF:  groups by Function prefix (GV / ID / PR / DE / RS / RC).
+ *
+ * The grouping logic is data-driven — no hardcoded version numbers.
+ * Adding a new standard version is a pure DB insert; no code change needed here.
+ */
+export function groupDbClauses(clauses: DbClause[]): Record<string, DbClause[]> {
+  const groups: Record<string, DbClause[]> = {};
+  for (const c of clauses) {
+    let group: string;
+    if (c.framework === 'ISO27001') {
+      if (c.clause_ref.startsWith('A.5'))       group = 'Organizational Controls (A.5)';
+      else if (c.clause_ref.startsWith('A.6'))   group = 'People Controls (A.6)';
+      else if (c.clause_ref.startsWith('A.7'))   group = 'Physical Controls (A.7)';
+      else if (c.clause_ref.startsWith('A.8'))   group = 'Technological Controls (A.8)';
+      else                                        group = 'ISMS Requirements (Clause 4–10)';
+    } else {
+      // NIST CSF ref format: GV.OC-01 → Function prefix = "GV"
+      group = c.clause_ref.split('.')[0];
+    }
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(c);
+  }
+  return groups;
+}
+
+/**
+ * Resolve a human-readable version label for display (e.g. "ISO 27001 · 2022").
+ *
+ * Prefers the DB-backed label when standardVersionId + versionsMap are provided.
+ * Falls back to a static string derived from `framework` for legacy checklist items
+ * that were created before the standard_versions table existed.
+ */
+export function getVersionLabel(
+  framework: Framework,
+  standardVersionId?: string,
+  versionsMap?: Map<string, StandardVersion>,
+): string {
+  if (standardVersionId && versionsMap) {
+    const v = versionsMap.get(standardVersionId);
+    if (v) return `${v.standard_name} · ${v.version}`;
+  }
+  // Historic fallback — old items always had ISO 27001:2022 or NIST CSF 2.0.
+  return framework === 'ISO27001' ? 'ISO 27001 · 2022' : 'NIST CSF · 2.0';
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

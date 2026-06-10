@@ -56,6 +56,32 @@ export interface PlanSession {
   mainAuditor: string;
   iaTeam: string[];
   createdAt: string;
+  /** FK → standard_versions.id — set when the session was created with the new clause picker */
+  standardVersionId?: string;
+}
+
+// ── Standard Versions (multi-version clause registry) ─────────────────────────
+
+/** One row per published version of a standard (e.g. "ISO 27001" · "2022"). */
+export interface StandardVersion {
+  id: string;
+  standard_name: string;   // "ISO 27001"
+  version: string;         // "2022"
+  is_active: boolean;
+  effective_date: string | null;
+  created_at: string;
+}
+
+/** One clause / control stored in Supabase, linked to a StandardVersion. */
+export interface DbClause {
+  id: string;
+  standard_version_id: string;
+  clause_ref: string;    // "4.1"  "A.5.26"  "GV.OC-01"
+  clause_title: string;
+  framework: Framework;
+  requirement: string;
+  display_order: number;
+  created_at: string;
 }
 
 export interface ChecklistItem {

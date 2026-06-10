@@ -15,24 +15,31 @@ const supabase = createClient(
  *
  * Returns the next available NCR number for the current CE year.
  * Format: NCRyyNNN  (yy = 2-digit CE year, NNN = 3-digit sequence)
- * e.g. NCR26001, NCR26002, …  — resets to NCR27001 when the year rolls over.
  *
- * Running on the server ensures the sequence is always based on the freshest
- * data in the database and prevents the "two tabs, same number" race that
- * client-side generation is susceptible to.
+ *   NCR26001 → NCR26002 → NCR26003 …   (all within 2026)
+ *   NCR27001 → NCR27002 …              (year rolls over → restart at 001)
+ *
+ * Algorithm:
+ *   1. Fetch ALL corrective_actions (no JSONB filter — Supabase PostgREST
+ *      does not support `like` on JSONB text accessors reliably).
+ *   2. Scan in JavaScript for entries whose ncrNumber matches this year's
+ *      prefix (e.g. "NCR26").
+ *   3. Return max sequence + 1, or 001 when no NCR exists for this year yet.
+ *
+ * Running server-side means every caller reads the same DB state, which
+ * prevents the "two tabs get the same number" race that client-side
+ * generation cannot avoid.
  */
 export async function GET() {
   const year   = new Date().getFullYear();
   const yy     = String(year).slice(-2);  // "26" for 2026
   const prefix = `NCR${yy}`;             // "NCR26"
 
-  // Fetch only corrective_actions that already have an NCR number for this year.
-  // We filter server-side via PostgREST's JSONB text accessor so we pull the
-  // minimum amount of data from the database.
+  // Fetch all corrective_actions so we can inspect ncrNumber in JS.
+  // An audit tool will never have so many records that this is a problem.
   const { data, error } = await supabase
     .from('corrective_actions')
-    .select('id, data')
-    .like('data->>ncrNumber', `${prefix}%`);
+    .select('id, data');
 
   if (error) {
     return NextResponse.json(
@@ -41,17 +48,19 @@ export async function GET() {
     );
   }
 
-  // Find the highest sequence number already used this year.
+  // Walk every row and find the highest sequence number used this year.
   let maxSeq = 0;
   for (const row of data ?? []) {
     const num = (row.data as Record<string, unknown>).ncrNumber as string | undefined;
-    if (num?.startsWith(prefix)) {
+    // Only count NCRs that belong to the current year's prefix.
+    if (typeof num === 'string' && num.startsWith(prefix)) {
       const seq = parseInt(num.slice(prefix.length), 10);
       if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
     }
   }
 
-  const nnn      = String(maxSeq + 1).padStart(3, '0');
+  // Next number is max + 1 (or 1 when no NCR exists for this year yet).
+  const nnn       = String(maxSeq + 1).padStart(3, '0');
   const ncrNumber = `${prefix}${nnn}`;
 
   return NextResponse.json({ ncrNumber });

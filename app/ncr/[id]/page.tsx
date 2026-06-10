@@ -10,7 +10,8 @@ import type {
   NcrSection4Data,
   NcrSection5Data,
 } from '@/lib/types';
-import { getCorrectiveActionById, saveCorrectiveAction } from '@/lib/store';
+import { getCorrectiveActionById } from '@/lib/store';
+import { useAuth } from '@/contexts/AuthContext';
 import PageLoader, { DbError } from '@/components/PageLoader';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -215,13 +216,26 @@ export default function NcrDetailPage() {
   const router   = useRouter();
   const id       = params.id as string;
 
-  const [ncr,      setNcr]      = useState<CorrectiveAction | null>(null);
-  const [loading,  setLoading]  = useState(true);
-  const [dbError,  setDbError]  = useState<string | null>(null);
-  const [saving,   setSaving]   = useState(false);
-  const [saveErr,  setSaveErr]  = useState<string | null>(null);
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  // Derive the NCR role from the user's real DB role.
+  //   admin / auditor → Auditor  (can fill sections 1, 3, 5)
+  //   viewer          → Auditee  (can fill sections 2, 4)
+  // Only admin gets a manual toggle (so they can preview the Auditee view).
+  const { profile, isAdmin } = useAuth();
+  const dbRole = profile?.role ?? 'viewer';
+  const authRole: Role = dbRole === 'viewer' ? 'Auditee' : 'Auditor';
 
-  const [role, setRole] = useState<Role>('Auditor');
+  // Admin can optionally toggle to the Auditee view for testing.
+  const [adminViewAs, setAdminViewAs] = useState<Role>('Auditor');
+  const role: Role = isAdmin ? adminViewAs : authRole;
+
+  // ── NCR state ─────────────────────────────────────────────────────────────
+
+  const [ncr,     setNcr]     = useState<CorrectiveAction | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [saving,  setSaving]  = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   const [sec2, setSec2] = useState<NcrSection2Data>(BLANK_SEC2);
   const [sec3, setSec3] = useState<NcrSection3Data>(BLANK_SEC3);
@@ -241,11 +255,6 @@ export default function NcrDetailPage() {
       if (record.ncrSection3) setSec3(record.ncrSection3);
       if (record.ncrSection4) setSec4(record.ncrSection4);
       if (record.ncrSection5) setSec5(record.ncrSection5);
-      // Restore role from sessionStorage
-      try {
-        const saved = sessionStorage.getItem(`ncr-role-${id}`);
-        if (saved === 'Auditor' || saved === 'Auditee') setRole(saved);
-      } catch { /* private browsing */ }
     } catch (e) {
       setDbError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
@@ -255,19 +264,32 @@ export default function NcrDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  function switchRole(r: Role) {
-    setRole(r);
-    try { sessionStorage.setItem(`ncr-role-${id}`, r); } catch { /* noop */ }
-  }
+  // ── API-backed section submit ─────────────────────────────────────────────
+  // All saves go through PATCH /api/ncr/[id] which re-validates the caller's
+  // DB role server-side before writing.  A viewer cannot bypass this by
+  // calling the client-side store directly — the API will return 403.
 
-  // ── Save helper ───────────────────────────────────────────────────────────
-
-  async function persist(updated: CorrectiveAction) {
+  async function callSectionApi(body: Record<string, unknown>) {
     setSaving(true);
     setSaveErr(null);
     try {
-      await saveCorrectiveAction(updated);
+      const res = await fetch(`/api/ncr/${id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+        cache:   'no-store',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const { ncr: updated } = await res.json() as { ncr: CorrectiveAction };
       setNcr(updated);
+      // Re-fill form states with the confirmed server values
+      if (updated.ncrSection2) setSec2(updated.ncrSection2);
+      if (updated.ncrSection3) setSec3(updated.ncrSection3);
+      if (updated.ncrSection4) setSec4(updated.ncrSection4);
+      if (updated.ncrSection5) setSec5(updated.ncrSection5);
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
     } finally {
@@ -278,58 +300,19 @@ export default function NcrDetailPage() {
   // ── Section submit handlers ───────────────────────────────────────────────
 
   async function submitSection2() {
-    if (!ncr) return;
-    const now = new Date().toISOString();
-    await persist({
-      ...ncr,
-      rootCause:        sec2.rootCause,
-      correctiveAction: sec2.correctiveAction,
-      preventiveAction: sec2.preventiveAction,
-      dueDate:          sec2.dueDate,
-      owner:            sec2.owner,
-      ncrCurrentStep:    3,
-      ncrWorkflowStatus: 'รอ Auditor',
-      ncrSection2: { ...sec2, submittedAt: now },
-      status:    'In Progress',
-      updatedAt: now,
-    });
+    await callSectionApi({ section: 2, ...sec2 });
   }
 
   async function submitSection3(approve: boolean) {
-    if (!ncr) return;
-    const now = new Date().toISOString();
-    await persist({
-      ...ncr,
-      ncrCurrentStep:    approve ? 4 : 2,
-      ncrWorkflowStatus: approve ? 'กำลังแก้ไข' : 'รอ Auditee',
-      ncrSection3: { approved: approve, reviewNotes: sec3.reviewNotes, reviewedAt: now },
-      updatedAt: now,
-    });
+    await callSectionApi({ section: 3, approved: approve, reviewNotes: sec3.reviewNotes });
   }
 
   async function submitSection4() {
-    if (!ncr) return;
-    const now = new Date().toISOString();
-    await persist({
-      ...ncr,
-      ncrCurrentStep:    5,
-      ncrWorkflowStatus: 'รอปิด NCR',
-      ncrSection4: { ...sec4, submittedAt: now },
-      updatedAt: now,
-    });
+    await callSectionApi({ section: 4, ...sec4 });
   }
 
   async function submitSection5() {
-    if (!ncr) return;
-    const now = new Date().toISOString();
-    await persist({
-      ...ncr,
-      ncrWorkflowStatus: 'ปิดแล้ว',
-      status:            'Closed',
-      closureNotes:      sec5.closureNotes,
-      ncrSection5: { ...sec5, closedAt: now },
-      updatedAt: now,
-    });
+    await callSectionApi({ section: 5, closureNotes: sec5.closureNotes });
   }
 
   // ── Guard ─────────────────────────────────────────────────────────────────
@@ -413,24 +396,38 @@ export default function NcrDetailPage() {
           )}{ncr.description}</p>
         </div>
 
-        {/* Role toggle */}
-        <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1 flex-shrink-0">
-          {(['Auditor', 'Auditee'] as Role[]).map(r => (
-            <button
-              key={r}
-              onClick={() => switchRole(r)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                role === r
-                  ? r === 'Auditor'
-                    ? 'bg-[#3C3489] text-white shadow-sm'
-                    : 'bg-[#0F6E56] text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {r === 'Auditor' ? '🔍 Auditor' : '📝 Auditee'}
-            </button>
-          ))}
-        </div>
+        {/* Role indicator / toggle */}
+        {isAdmin ? (
+          // Admin only: allow toggling between views for testing
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
+              {(['Auditor', 'Auditee'] as Role[]).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setAdminViewAs(r)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    adminViewAs === r
+                      ? r === 'Auditor'
+                        ? 'bg-[#3C3489] text-white shadow-sm'
+                        : 'bg-[#0F6E56] text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {r === 'Auditor' ? '🔍 Auditor' : '📝 Auditee'}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400">Admin — กำลังดูในมุม {adminViewAs}</p>
+          </div>
+        ) : (
+          // Non-admin: show a fixed read-only badge reflecting their real role
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white flex-shrink-0"
+            style={{ background: authRole === 'Auditor' ? AUDITOR_COLOR : AUDITEE_COLOR }}
+          >
+            {authRole === 'Auditor' ? '🔍 Auditor' : '📝 Auditee'}
+          </div>
+        )}
       </div>
 
       {/* ── Progress steps ────────────────────────────────────────────────── */}

@@ -1,0 +1,37 @@
+# ── Git / CI ──────────────────────────────────────────────────────────────────
+.git
+.github
+.gitignore
+
+# ── Dependencies (rebuilt inside container) ───────────────────────────────────
+node_modules
+
+# ── Build output ──────────────────────────────────────────────────────────────
+.next
+
+# ── Environment files (injected at runtime via Docker) ───────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── On-premise scripts (not needed in the app image) ─────────────────────────
+on-premise/
+database_dump.sql
+attachments/
+export_*.sh
+export_*.md
+scripts/
+
+# ── Dev / test artifacts ──────────────────────────────────────────────────────
+*.log
+*.sql.bak
+coverage/
+.nyc_output/
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

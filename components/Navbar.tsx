@@ -2,17 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth, type UserRole } from '@/contexts/AuthContext';
-
-const ROLE_BADGE: Record<UserRole, string> = {
-  admin:   'bg-purple-100 text-purple-700 border-purple-200',
-  auditor: 'bg-blue-100  text-blue-700  border-blue-200',
-  viewer:  'bg-slate-100 text-slate-600 border-slate-200',
-};
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { profile, loading, isAdmin, canSeeChecklist, signOut } = useAuth();
+  const { loading, isAdmin, canSeeChecklist } = useAuth();
 
   // Fail-open during auth load: show all tabs briefly so admin/auditor users
   // never see menus flicker away. Once loading resolves, role-based rules apply.
@@ -29,10 +23,6 @@ export default function Navbar() {
   ];
 
   if (pathname === '/login' || pathname.startsWith('/auth/')) return null;
-
-  // Display name: prefer non-empty name, fall back to email
-  const displayName = (profile?.name?.trim()) || profile?.email || '';
-  const avatarChar  = displayName.charAt(0).toUpperCase();
 
   return (
     <nav className="bg-white border-b border-slate-200 shadow-sm">
@@ -85,30 +75,8 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* User info + logout */}
-          <div className="flex items-center gap-3">
-            {profile && (
-              <div className="flex items-center gap-2">
-                <div className="text-right hidden sm:block">
-                  <p className="text-sm font-medium text-slate-800 leading-tight">
-                    {displayName}
-                  </p>
-                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded border capitalize ${ROLE_BADGE[profile.role]}`}>
-                    {profile.role}
-                  </span>
-                </div>
-                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-semibold text-slate-600 shrink-0">
-                  {avatarChar}
-                </div>
-              </div>
-            )}
-            <button
-              onClick={signOut}
-              className="text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors font-medium"
-            >
-              Sign out
-            </button>
-          </div>
+          {/* Placeholder to keep layout balanced */}
+          <div />
 
         </div>
       </div>

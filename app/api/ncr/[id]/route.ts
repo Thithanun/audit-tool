@@ -83,27 +83,7 @@ export async function PATCH(
   const { id } = await context.params;
   const supabase = makeSupabase(request);
 
-  // ── 1. Authenticate ────────────────────────────────────────────────────────
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  // ── 2. Load user's profile role ────────────────────────────────────────────
-  const { data: profileRow, error: profErr } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-  if (profErr || !profileRow) {
-    return NextResponse.json({ error: 'Profile not found' }, { status: 403 });
-  }
-
-  const dbRole: string = (profileRow as { role: string }).role; // 'admin' | 'auditor' | 'viewer'
-  const isAuditor = dbRole === 'admin' || dbRole === 'auditor';
-  const isAuditee = dbRole === 'viewer';
-
-  // ── 3. Parse & validate request body ─────────────────────────────────────
+  // ── 1. Parse & validate request body ─────────────────────────────────────
   let payload: SectionPayload;
   try {
     payload = await request.json() as SectionPayload;
@@ -113,21 +93,7 @@ export async function PATCH(
 
   const { section } = payload;
 
-  // Role ↔ section permission check
-  if ((section === 2 || section === 4) && !isAuditee) {
-    return NextResponse.json(
-      { error: `Section ${section} can only be submitted by an Auditee (viewer)` },
-      { status: 403 },
-    );
-  }
-  if ((section === 3 || section === 5) && !isAuditor) {
-    return NextResponse.json(
-      { error: `Section ${section} can only be submitted by an Auditor (admin/auditor)` },
-      { status: 403 },
-    );
-  }
-
-  // ── 4. Load the current NCR ────────────────────────────────────────────────
+  // ── 2. Load the current NCR ────────────────────────────────────────────────
   const { data: ncrRow, error: ncrErr } = await supabase
     .from('corrective_actions')
     .select('id, data')
@@ -139,7 +105,7 @@ export async function PATCH(
 
   const ncr = fromRow<CorrectiveAction>(ncrRow as DataRow);
 
-  // ── 5. Derive effective step (backward-compat with legacy NCRs) ────────────
+  // ── 3. Derive effective step (backward-compat with legacy NCRs) ────────────
   const currentStep = ncr.ncrCurrentStep != null
     ? ncr.ncrCurrentStep
     : ncr.status === 'In Progress' ? 3 : 2;
@@ -170,7 +136,7 @@ export async function PATCH(
     );
   }
 
-  // ── 6. Build the updated NCR ───────────────────────────────────────────────
+  // ── 4. Build the updated NCR ───────────────────────────────────────────────
   const now = new Date().toISOString();
   let updated: CorrectiveAction;
 
@@ -244,7 +210,7 @@ export async function PATCH(
     };
   }
 
-  // ── 7. Persist ────────────────────────────────────────────────────────────
+  // ── 5. Persist ────────────────────────────────────────────────────────────
   const { error: saveErr } = await supabase
     .from('corrective_actions')
     .upsert(toRow(updated));

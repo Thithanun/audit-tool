@@ -1,29 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { loading, canSeeChecklist } = useAuth();
+  const router = useRouter();
+  const { loading, canSeeChecklist, isAdmin, profile, signOut } = useAuth();
 
-  // Fail-open during auth load: show all tabs briefly so admin/auditor users
-  // never see menus flicker away. Once loading resolves, role-based rules apply.
-  //
+  if (pathname === '/login' || pathname.startsWith('/auth/')) return null;
+
   // Visibility matrix:
-  //   Viewer  → Audit Plan · Dashboard
-  //   Auditor → Audit Plan · Checklist · Dashboard
-  //   Admin   → Audit Plan · Checklist · Dashboard · Users
+  //   Viewer  → Audit Plan · Dashboard · Report
+  //   Auditor → Audit Plan · Checklist · Dashboard · Report
+  //   Admin   → Audit Plan · Checklist · Dashboard · Report · Users
   const NAV_LINKS = [
     { href: '/audit-plan',     label: 'Audit Plan', visible: true },
     { href: '/checklist',      label: 'Checklist',  visible: loading || canSeeChecklist },
     { href: '/dashboard',      label: 'Dashboard',  visible: true },
     { href: '/report',         label: 'Report',     visible: true },
-    { href: '/settings/users', label: 'Users',      visible: true },
+    { href: '/settings/users', label: 'Users',      visible: loading || isAdmin },
   ];
 
-  if (pathname === '/login' || pathname.startsWith('/auth/')) return null;
+  async function handleSignOut() {
+    await signOut();
+    router.push('/login');
+  }
 
   return (
     <nav className="bg-white border-b border-slate-200 shadow-sm">
@@ -61,11 +64,22 @@ export default function Navbar() {
                 </Link>
               );
             })}
-
           </div>
 
-          {/* Placeholder to keep layout balanced */}
-          <div />
+          {/* User info + sign out */}
+          <div className="flex items-center gap-3">
+            {profile && (
+              <span className="text-sm text-slate-500 hidden sm:block">
+                {profile.name || profile.email}
+              </span>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-md hover:bg-slate-100 transition-colors border border-slate-200"
+            >
+              Sign out
+            </button>
+          </div>
 
         </div>
       </div>

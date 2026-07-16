@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import AuthGuard from "@/components/AuthGuard";
 import { AuthProvider } from "@/contexts/AuthContext";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
@@ -26,8 +27,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning        
     >
         <AuthProvider>
-          <Navbar />
-          <main>{children}</main>
+          <AuthGuard>
+            <Navbar />
+            <main>{children}</main>
+          </AuthGuard>
         </AuthProvider>
     </body>
   </html>

@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Required for Docker / on-premise deployment (creates .next/standalone)
+  output: "standalone",
+
   // Belt-and-suspenders no-cache headers (middleware.ts also sets these).
   // Scoped to exclude _next/static / _next/image so hashed immutable assets
   // keep their long-lived cache — only documents and data are forced fresh.

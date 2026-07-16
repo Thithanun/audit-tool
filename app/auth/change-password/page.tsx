@@ -12,7 +12,7 @@ export default function ChangePasswordPage() {
   const [error, setError]         = useState<string | null>(null);
   const [loading, setLoading]     = useState(false);
   const router = useRouter();
-  const { refreshProfile } = useAuth();
+  const { user, refreshProfile } = useAuth();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +22,7 @@ export default function ChangePasswordPage() {
     setError(null);
     setLoading(true);
     try {
-      const { error: dbErr } = await markPasswordChanged();
+      const { error: dbErr } = await markPasswordChanged(user?.id ?? '');
       if (dbErr) throw new Error(dbErr);
 
       const { error: authErr } = await supabase.auth.updateUser({ password });

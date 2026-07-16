@@ -1,12 +1,8 @@
 'use server';
 
-import { createSupabaseServer } from '@/lib/supabase-server';
-
-export async function markPasswordChanged(): Promise<{ error: string | null }> {
+export async function markPasswordChanged(userId: string): Promise<{ error: string | null }> {
   try {
-    const supabase = await createSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
+    if (!userId) throw new Error('Missing userId');
 
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
@@ -14,7 +10,7 @@ export async function markPasswordChanged(): Promise<{ error: string | null }> {
     const pub = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
     const rest = process.env.POSTGREST_INTERNAL_URL ?? `${pub}/rest/v1`;
 
-    const res = await fetch(`${rest}/profiles?id=eq.${user.id}`, {
+    const res = await fetch(`${rest}/profiles?id=eq.${userId}`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${key}`,
@@ -22,6 +18,7 @@ export async function markPasswordChanged(): Promise<{ error: string | null }> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ must_change_password: false }),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);

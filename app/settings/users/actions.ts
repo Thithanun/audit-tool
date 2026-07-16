@@ -1,23 +1,27 @@
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
 import type { UserProfile } from '@/contexts/AuthContext';
 
-// ── Admin Supabase client (service role, bypasses RLS) ────────────────────────
-
-async function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url)        throw new Error('Missing env var: NEXT_PUBLIC_SUPABASE_URL');
-  if (!serviceKey) throw new Error('Missing env var: SUPABASE_SERVICE_ROLE_KEY');
-  return createClient(url, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+// On-premise: calls PostgREST/GoTrue directly (bypasses nginx).
+// Local dev (Supabase Cloud): falls back to public URL.
+function getUrls() {
+  const pub = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  return {
+    rest: process.env.POSTGREST_INTERNAL_URL ?? `${pub}/rest/v1`,
+    auth: process.env.GOTRUE_INTERNAL_URL   ?? `${pub}/auth/v1`,
+  };
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+function getServiceKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error('Missing env var: SUPABASE_SERVICE_ROLE_KEY');
+  return key;
+}
 
-/** Wrap any thrown value into a plain string for the client. */
+function hdrs(key: string, extra?: Record<string, string>) {
+  return { 'Authorization': `Bearer ${key}`, 'apikey': key, 'Content-Type': 'application/json', ...extra };
+}
+
 function toMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -26,13 +30,11 @@ function toMsg(err: unknown): string {
 
 export async function getUsers(): Promise<{ users: UserProfile[]; error: string | null }> {
   try {
-    const admin = await getAdminClient();
-    const { data, error } = await admin
-      .from('profiles')
-      .select('id, email, name, role')
-      .order('email');
-    if (error) throw new Error(error.message);
-    return { users: (data ?? []) as UserProfile[], error: null };
+    const key = getServiceKey();
+    const { rest } = getUrls();
+    const res = await fetch(`${rest}/profiles?select=id,email,name,role&order=email`, { headers: hdrs(key) });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return { users: await res.json(), error: null };
   } catch (err) {
     return { users: [], error: toMsg(err) };
   }
@@ -45,28 +47,23 @@ export async function createUser(
   role: string,
 ): Promise<{ error: string | null }> {
   try {
-    const admin = await getAdminClient();
-    // email_confirm: true skips the confirmation email — user logs in immediately.
-    // must_change_password is set to true by the DB column default, so the
-    // trigger-created profile row will already have the flag set correctly.
-    const { data: created, error } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { name, role },
-    });
-    if (error) throw new Error(error.message);
+    const key = getServiceKey();
+    const { rest, auth } = getUrls();
 
-    // Explicitly upsert profile row in case the DB trigger doesn't exist
-    if (created?.user) {
-      await admin.from('profiles').upsert({
-        id: created.user.id,
-        email,
-        name: name || null,
-        role,
-        must_change_password: true,
-      });
-    }
+    const authRes = await fetch(`${auth}/admin/users`, {
+      method: 'POST',
+      headers: hdrs(key),
+      body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { name, role } }),
+    });
+    if (!authRes.ok) throw new Error(`${authRes.status}: ${await authRes.text()}`);
+    const created = await authRes.json();
+
+    await fetch(`${rest}/profiles`, {
+      method: 'POST',
+      headers: hdrs(key, { 'Prefer': 'resolution=merge-duplicates' }),
+      body: JSON.stringify({ id: created.id, email, name: name || null, role, must_change_password: true }),
+    });
+
     return { error: null };
   } catch (err) {
     console.error('[createUser]', toMsg(err));
@@ -79,12 +76,14 @@ export async function updateUserRole(
   role: string,
 ): Promise<{ error: string | null }> {
   try {
-    const admin = await getAdminClient();
-    const { error } = await admin
-      .from('profiles')
-      .update({ role })
-      .eq('id', userId);
-    if (error) throw new Error(error.message);
+    const key = getServiceKey();
+    const { rest } = getUrls();
+    const res = await fetch(`${rest}/profiles?id=eq.${userId}`, {
+      method: 'PATCH',
+      headers: hdrs(key),
+      body: JSON.stringify({ role }),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return { error: null };
   } catch (err) {
     console.error('[updateUserRole]', toMsg(err));
@@ -96,11 +95,14 @@ export async function resetUserPassword(
   userId: string,
 ): Promise<{ error: string | null }> {
   try {
-    const admin = await getAdminClient();
-    const { error } = await admin.auth.admin.updateUserById(userId, {
-      password: 'P@ssw0rd',
+    const key = getServiceKey();
+    const { auth } = getUrls();
+    const res = await fetch(`${auth}/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: hdrs(key),
+      body: JSON.stringify({ password: 'P@ssw0rd' }),
     });
-    if (error) throw new Error(error.message);
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     console.log(`[resetUserPassword] target=${userId} at=${new Date().toISOString()}`);
     return { error: null };
   } catch (err) {
@@ -113,21 +115,13 @@ export async function removeUser(
   userId: string,
 ): Promise<{ error: string | null }> {
   try {
-    const admin = await getAdminClient();
+    const key = getServiceKey();
+    const { rest, auth } = getUrls();
 
-    // Delete profile row first — prevents FK constraint errors if the
-    // table was created without ON DELETE CASCADE.
-    const { error: profileErr } = await admin
-      .from('profiles')
-      .delete()
-      .eq('id', userId);
-    if (profileErr) {
-      // Non-fatal: row may already be absent; log and continue.
-      console.error('[removeUser] profile delete:', profileErr.code, profileErr.message);
-    }
+    await fetch(`${rest}/profiles?id=eq.${userId}`, { method: 'DELETE', headers: hdrs(key) });
 
-    const { error: authErr } = await admin.auth.admin.deleteUser(userId);
-    if (authErr) throw new Error(authErr.message);
+    const res = await fetch(`${auth}/admin/users/${userId}`, { method: 'DELETE', headers: hdrs(key) });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 
     return { error: null };
   } catch (err) {

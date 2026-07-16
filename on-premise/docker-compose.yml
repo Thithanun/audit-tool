@@ -163,7 +163,7 @@ services:
     build:
       # ./source is a symlink created by install.sh → ~/audit-tool/audit-tool/
       context: ./source
-      dockerfile: ./source/on-premise/Dockerfile
+      dockerfile: on-premise/Dockerfile
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SITE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
@@ -196,6 +196,10 @@ services:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      # Direct internal URLs — bypasses nginx for server actions that use the service key.
+      # This avoids hairpin-NAT failures on servers that can't reach their own public URL.
+      POSTGREST_INTERNAL_URL: http://rest:3000
+      GOTRUE_INTERNAL_URL: http://gotrue:9999
     networks:
       - audit_net
     healthcheck:

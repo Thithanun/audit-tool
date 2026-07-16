@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, type UserProfile, type UserRole } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { createUser, updateUserRole, removeUser, resetUserPassword } from './actions';
+import { getUsers, createUser, updateUserRole, removeUser, resetUserPassword } from './actions';
 import Modal from '@/components/Modal';
 import PageLoader from '@/components/PageLoader';
 
@@ -43,15 +42,9 @@ export default function UsersPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from('profiles')
-      .select('id, email, name, role')
-      .order('email');
-    if (err) {
-      setError(err.message);
-    } else {
-      setUsers((data ?? []) as UserProfile[]);
-    }
+    const { users: data, error: err } = await getUsers();
+    if (err) setError(err);
+    else setUsers(data);
     setLoading(false);
   }, []);
 

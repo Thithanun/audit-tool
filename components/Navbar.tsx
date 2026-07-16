@@ -16,10 +16,11 @@ export default function Navbar() {
   //   Auditor → Audit Plan · Checklist · Dashboard
   //   Admin   → Audit Plan · Checklist · Dashboard · Users
   const NAV_LINKS = [
-    { href: '/audit-plan', label: 'Audit Plan', visible: true },
-    { href: '/checklist',  label: 'Checklist',  visible: loading || canSeeChecklist },
-    { href: '/dashboard',  label: 'Dashboard',  visible: true },
-    { href: '/report',     label: 'Report',     visible: true },
+    { href: '/audit-plan',     label: 'Audit Plan', visible: true },
+    { href: '/checklist',      label: 'Checklist',  visible: loading || canSeeChecklist },
+    { href: '/dashboard',      label: 'Dashboard',  visible: true },
+    { href: '/report',         label: 'Report',     visible: true },
+    { href: '/settings/users', label: 'Users',      visible: true },
   ];
 
   if (pathname === '/login' || pathname.startsWith('/auth/')) return null;

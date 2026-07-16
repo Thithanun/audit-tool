@@ -1,8 +1,15 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   // Required for Docker / on-premise deployment (creates .next/standalone)
   output: "standalone",
+
+  // Explicitly set Turbopack workspace root to prevent it from picking up
+  // lockfiles in parent directories (e.g. home dir) as the project root.
+  turbopack: {
+    root: path.resolve("."),
+  },
 
   // Belt-and-suspenders no-cache headers (middleware.ts also sets these).
   // Scoped to exclude _next/static / _next/image so hashed immutable assets

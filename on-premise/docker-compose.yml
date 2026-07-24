@@ -54,7 +54,7 @@ services:
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: "postgres://supabase_auth_admin:${GOTRUE_DB_PASSWORD_ENC}@postgres:5432/postgres?search_path=auth"
       GOTRUE_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
-      GOTRUE_URI_ALLOW_LIST: ${NEXT_PUBLIC_SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: "${NEXT_PUBLIC_SITE_URL},http://localhost:3000,http://localhost:3001"
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
       GOTRUE_JWT_EXP: 3600
